@@ -1,0 +1,1247 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>홀덤</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* ① 디자인 토큰 — 홀덤펍 테이블: 짙은 펠트, 가죽 레일, 황동 장식, 아이보리 카드
+   레이아웃: 위쪽 타원 테이블(내 자리가 항상 아래 가운데) + 아래 고정 액션 바 */
+:root {
+  --room: #0a1310;
+  --rail: #1d1511;
+  --felt: #12513b;
+  --felt-dark: #0b3727;
+  --brass: #dcab4c;
+  --brass-dim: #8a6a2c;
+  --ivory: #f6f1e3;
+  --ink: #1b1a17;
+  --red: #c4302b;
+  --text: #efe8d6;
+  --muted: #98ad9f;
+  --danger: #e0614f;
+  --f-sign: "Black Han Sans", "IBM Plex Sans KR", sans-serif;
+  --f-body: "IBM Plex Sans KR", system-ui, sans-serif;
+  --f-num: "Barlow Condensed", "IBM Plex Sans KR", sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: radial-gradient(ellipse at 50% 30%, #13221c 0%, var(--room) 70%);
+  color: var(--text); font-family: var(--f-body); font-size: 14px;
+}
+.wrap {
+  max-width: 760px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 14px 230px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-family: var(--f-sign); font-weight: 400; font-size: 26px; margin: 0; letter-spacing: .02em; color: var(--brass); }
+.blinds { font-family: var(--f-num); font-size: 15px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.blinds b { color: var(--text); font-weight: 600; }
+
+/* ② 테이블 */
+.table {
+  position: relative; width: 100%; aspect-ratio: 3 / 3.6; max-width: 100%;
+  margin-block: 34px 30px;
+}
+@media (min-width: 620px) { .table { aspect-ratio: 16 / 10; } }
+.felt {
+  position: absolute; inset: 8% 9%;
+  border-radius: 50% / 46%;
+  background: radial-gradient(ellipse at 50% 40%, var(--felt) 0%, var(--felt-dark) 85%);
+  border: 12px solid var(--rail);
+  box-shadow: 0 0 0 2px var(--brass-dim), inset 0 0 40px rgba(0,0,0,.45), 0 18px 40px rgba(0,0,0,.5);
+}
+.center {
+  position: absolute; left: 50%; top: 48%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px; width: 64%;
+}
+.pot { font-family: var(--f-num); font-weight: 600; font-size: 17px; letter-spacing: .05em; color: var(--ivory); }
+.pot span { color: var(--brass); }
+.pot small { display: block; text-align: center; font-size: 13px; font-weight: 500; color: var(--muted); }
+.board { display: flex; gap: 4px; min-height: 52px; }
+.banner { font-size: 13px; text-align: center; color: var(--brass); min-height: 18px; text-wrap: balance; }
+
+/* ③ 카드 */
+.card {
+  width: 36px; height: 50px; border-radius: 5px; background: var(--ivory); color: var(--ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: var(--f-num); font-weight: 700; line-height: .95; box-shadow: 0 2px 4px rgba(0,0,0,.35);
+}
+.card.new { animation: deal .25s ease-out; }   /* 처음 나타난 카드만 한 번 움직임 */
+/* 딜러가 보드 카드를 한 장씩 뒤집기: --d 초 기다렸다가 반 바퀴 돌며 뒷면 → 앞면 */
+.card.flip { position: relative; animation: flipIn .55s ease-in-out var(--d, 0s) both; }
+.card.flip::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; box-sizing: border-box;
+  background: repeating-linear-gradient(45deg, #7d1f1c 0 4px, #8f2a25 4px 8px); border: 2px solid var(--ivory);
+  animation: hideBack .55s linear var(--d, 0s) both;
+}
+@keyframes flipIn { 0% { transform: scaleX(1); } 50% { transform: scaleX(0); } 100% { transform: scaleX(1); } }
+@keyframes hideBack { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
+/* 내 카드 직접 까기: 뒷면 덮개(cover)를 끌어내면 아래 앞면이 보임 */
+.card.lg { position: relative; }
+.card .ix { position: absolute; display: flex; flex-direction: column; align-items: center; font-size: 13px; line-height: .9; }
+.card .ix.tl { top: 4px; left: 5px; }
+.card .ix.br { bottom: 4px; right: 5px; transform: rotate(180deg); }
+.peel { overflow: hidden; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.peel:active { cursor: grabbing; }
+.peel .cover {
+  position: absolute; inset: 0; border-radius: inherit; box-sizing: border-box;
+  background: repeating-linear-gradient(45deg, #7d1f1c 0 4px, #8f2a25 4px 8px); border: 2px solid var(--ivory);
+  box-shadow: -3px -3px 10px rgba(0,0,0,.5); transition: transform .28s ease, opacity .28s ease;
+}
+.peel .cover.drag { transition: none; }
+/* 승리 표시: 내가 이기면 테이블 가운데 큰 WIN 도장, 이긴 사람 좌석에는 WIN 배지 */
+.bigwin {
+  position: absolute; left: 50%; top: 48%; z-index: 4; pointer-events: none; text-align: center; line-height: 1.05;
+  transform: translate(-50%, -50%) rotate(-8deg);
+  font-family: var(--f-sign); font-size: clamp(56px, 17vw, 110px); color: var(--brass);
+  text-shadow: 0 4px 0 #6b4d16, 0 0 30px rgba(220,171,76,.6);
+  border: 5px solid var(--brass); border-radius: 14px; padding: 2px 20px 6px; background: rgba(10,19,16,.8);
+  animation: stamp .45s cubic-bezier(.2,1.6,.4,1) both, fadeWin .7s ease 3.2s forwards;
+}
+.bigwin span { display: block; font-family: var(--f-num); font-weight: 700; font-size: .32em; color: var(--ivory); text-shadow: none; }
+@keyframes stamp { from { transform: translate(-50%, -50%) rotate(-8deg) scale(2.2); opacity: 0; } to { transform: translate(-50%, -50%) rotate(-8deg) scale(1); opacity: 1; } }
+@keyframes fadeWin { to { opacity: 0; } }
+.winbadge {
+  position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+  font-family: var(--f-sign); font-size: 13px; letter-spacing: .1em; color: var(--ink);
+  background: var(--brass); border-radius: 6px; padding: 1px 9px; box-shadow: 0 0 12px rgba(220,171,76,.7);
+}
+.card .r { font-size: 20px; }
+.card .s { font-size: 16px; }
+.card.red { color: var(--red); }
+.card.slot { background: transparent; border: 1px dashed rgba(246,241,227,.18); box-shadow: none; animation: none; }
+.card.back {
+  background: repeating-linear-gradient(45deg, #7d1f1c 0 4px, #8f2a25 4px 8px);
+  border: 2px solid var(--ivory);
+}
+.card.sm { width: 24px; height: 33px; border-radius: 3px; }
+.card.sm .r { font-size: 14px; }
+.card.sm .s { font-size: 11px; }
+.card.lg { width: 58px; height: 80px; border-radius: 7px; }
+.card.lg .r { font-size: 32px; }
+.card.lg .s { font-size: 24px; }
+.card.dim { opacity: .35; }
+@keyframes deal { from { transform: translateY(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ④ 좌석 */
+.seat {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 86px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.seat .plate {
+  width: 100%; background: var(--rail); border: 1px solid #3a2c22; border-radius: 9px;
+  padding: 4px 6px; text-align: center; position: relative;
+}
+.seat .name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seat .stack { font-family: var(--f-num); font-size: 15px; font-weight: 600; color: var(--brass); font-variant-numeric: tabular-nums; }
+.seat .tag { font-size: 10px; color: var(--muted); letter-spacing: .04em; min-height: 13px; }
+.seat.turn .plate { border-color: var(--brass); box-shadow: 0 0 0 2px var(--brass), 0 0 18px rgba(220,171,76,.45); }
+.seat.me .plate { background: #2a1f18; }
+.seat.out { opacity: .45; }
+.seat.win .plate { border-color: var(--brass); background: #3a2b14; }
+.seat .cards { display: flex; gap: 2px; min-height: 33px; }
+.seat .bet {
+  font-family: var(--f-num); font-size: 13px; font-weight: 600; color: var(--ivory);
+  background: rgba(0,0,0,.4); border-radius: 10px; padding: 0 7px; min-height: 18px;
+}
+.seat .bet:empty { visibility: hidden; }
+.chipdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--brass); margin-right: 4px; vertical-align: 1px; }
+.dealer {
+  position: absolute; top: -9px; right: -9px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--ivory); color: var(--ink); font: 700 11px/20px var(--f-num); text-align: center;
+}
+.timer { position: absolute; left: 6px; right: 6px; bottom: 2px; height: 2px; background: rgba(255,255,255,.1); border-radius: 2px; overflow: hidden; }
+.timer i { display: block; height: 100%; background: var(--brass); }
+.sit {
+  width: 62px; height: 62px; border-radius: 50%; border: 1px dashed rgba(220,171,76,.5);
+  background: rgba(0,0,0,.25); color: var(--brass); font: 500 12px var(--f-body); cursor: pointer;
+}
+.sit:hover, .sit:focus-visible { background: rgba(220,171,76,.12); }
+.sit:disabled { opacity: .3; cursor: default; }
+
+/* ⑤ 버튼·패널 */
+button { font-family: var(--f-body); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.btn {
+  border: 1px solid #3d3027; background: var(--rail); color: var(--text);
+  padding: 10px 14px; border-radius: 10px; font-size: 14px; font-weight: 500; cursor: pointer;
+}
+.btn:hover { border-color: var(--brass-dim); }
+.btn.gold { background: var(--brass); color: var(--ink); border-color: var(--brass); font-weight: 700; }
+.btn.ghost { background: transparent; }
+.btn.warn { color: var(--danger); }
+.btn:disabled { opacity: .4; cursor: default; }
+.panel { background: rgba(29,21,17,.75); border: 1px solid #33271f; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.panel h2 { font-family: var(--f-sign); font-weight: 400; font-size: 16px; margin: 0; color: var(--brass); letter-spacing: .03em; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.muted { color: var(--muted); font-size: 13px; }
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+input[type=number], input[type=text] {
+  background: var(--room); border: 1px solid #3d3027; color: var(--text); border-radius: 8px;
+  padding: 8px 10px; font: 500 15px var(--f-num); width: 100px;
+}
+input[type=text] { font-family: var(--f-body); width: 180px; }
+.log { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; max-height: 150px; overflow-y: auto; }
+
+/* ⑥ 하단 액션 바 */
+.dock {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  background: linear-gradient(to top, var(--rail) 75%, rgba(29,21,17,.92));
+  border-top: 1px solid var(--brass-dim);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+.dock-in { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.dock-row { display: flex; gap: 12px; align-items: center; }
+.dock button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.mine { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.mine .cards { display: flex; gap: 4px; }
+.mine .hand { font-size: 12px; color: var(--brass); min-height: 16px; text-align: center; }
+.acts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.acts .main { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+/* 행동 버튼: 위에 이름, 아래에 금액 — 한 줄이 넘치지 않게 줄바꿈 금지 */
+.btn.act {
+  min-height: 56px; padding: 6px 4px; white-space: nowrap;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+}
+.btn.act b { font-size: 15px; font-weight: 700; }
+.btn.act small { font-family: var(--f-num); font-size: 15px; font-weight: 600; letter-spacing: .02em; opacity: .85; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+/* 레이즈 시트: 액션 바 위에 전체 너비로 펼쳐짐 */
+.sheet:empty { display: none; }
+.sheet-in { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #3a2c22; }
+.amt-row { display: grid; grid-template-columns: 56px 1fr 56px; gap: 8px; align-items: center; }
+.btn.step { height: 50px; padding: 0; font: 600 26px/1 var(--f-num); }
+.amt { text-align: center; }
+.amt small { display: block; font-size: 12px; color: var(--muted); }
+.amt output { font: 700 32px/1.1 var(--f-num); color: var(--brass); font-variant-numeric: tabular-nums; }
+.sheet input[type=range] { width: 100%; height: 32px; margin: 0; accent-color: var(--brass); }
+.presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.presets .btn { padding: 11px 2px; font-size: 13px; white-space: nowrap; }
+.btn.confirm { min-height: 52px; font-size: 17px; font-family: var(--f-body); }
+@media (max-width: 380px) { .card.lg { width: 48px; height: 66px; } .card.lg .r { font-size: 26px; } .card.lg .s { font-size: 19px; } }
+/* 방 정보 줄: 방 코드 + 링크 공유 */
+.room { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.room:empty { display: none; }
+.room b { font-family: var(--f-num); font-size: 18px; letter-spacing: .12em; color: var(--brass); }
+.room .btn { padding: 6px 10px; font-size: 13px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-right: 5px; }
+.dot.on { background: #5fcf8a; }
+input.code { width: 120px; font: 600 20px var(--f-num); letter-spacing: .2em; text-align: center; }
+.status { font-size: 13px; color: var(--muted); }
+.status b { color: var(--text); }
+.toast {
+  position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+  background: var(--ivory); color: var(--ink); padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 20;
+  max-width: calc(100% - 32px);
+}
+@media (prefers-reduced-motion: reduce) { .card.new, .card.flip { animation: none; } .card.flip::after { display: none; } .bigwin { animation: fadeWin .7s ease 3.2s forwards; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>홀덤</h1>
+    <div class="blinds" id="blinds"></div>
+  </header>
+  <div class="room" id="room"></div>
+  <div class="table" id="table">
+    <div class="felt"></div>
+    <div class="center">
+      <div class="pot" id="pot"></div>
+      <div class="board" id="board"></div>
+      <div class="banner" id="banner"></div>
+    </div>
+    <div class="bigwin" id="bigwin" hidden></div>
+  </div>
+  <div id="lobby"></div>
+  <div class="panel">
+    <h2>핸드 기록</h2>
+    <div class="log" id="log"><div>아직 진행한 핸드가 없어요.</div></div>
+  </div>
+</div>
+<div class="dock"><div class="dock-in"><div class="sheet" id="sheet"></div><div class="dock-row"><div class="mine" id="mine"></div><div class="acts" id="acts"></div></div></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* ============================================================
+   ⑦ 기본 상수 · 전역 상태
+   ============================================================ */
+const RANKS = "23456789TJQKA";              // 카드 숫자 (T=10)
+const SUIT_SYM = { s: "♠", h: "♥", d: "♦", c: "♣" };
+const SEATS = 9;                             // 최대 9인 테이블
+const TURN_MS = 60000;                       // 60초 지나면 다른 사람이 강제 폴드 가능
+const AUTO_NEXT_MS = 9000;                   // 핸드 끝나고 9초 뒤 다음 핸드 자동 시작 (카드 뒤집는 시간 포함)
+const BLIND_EVERY = 5, BLIND_MULT = 2;       // 5핸드마다 블라인드 2배
+const PEER_PREFIX = "pubholdem-yoogr-";      // 방 코드 앞에 붙여서 PeerJS 서버에서 쓰는 이름
+
+let myId = null, myName = "";
+let S = null;                                // 테이블 상태 전체 (방장은 원본, 친구는 방장이 보내준 사본)
+let raiseTo = 0, raiseOpen = false;          // 레이즈 슬라이더 값 (내 화면에서만)
+let resetArm = false;
+let autoTimer = null, autoFor = 0;
+let mode = null, roomCode = "";              // mode: "host"(방장) | "guest"(친구) | null(아직 입장 전)
+let peer = null, hostConn = null, linked = false, skew = 0;
+const conns = new Set();                     // 방장: 연결된 친구들
+const isHost = () => mode === "host";
+const now = () => Date.now() + skew;         // 방장 폰 시계 기준 시간 (타이머가 폰마다 어긋나지 않게)
+
+/* ============================================================
+   ⑧ 카드 · 덱
+   ============================================================ */
+function newDeck() {
+  const d = [];
+  for (const r of RANKS) for (const s of "shdc") d.push(r + s);
+  // 피셔-예이츠 셔플 (암호학적 난수 사용)
+  for (let i = d.length - 1; i > 0; i--) {
+    const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+    [d[i], d[j]] = [d[j], d[i]];
+  }
+  return d;
+}
+const rv = c => RANKS.indexOf(c[0]) + 2;     // 카드 숫자값 2~14
+
+/* ============================================================
+   ⑨ 족보 판정 — 7장 중 가장 좋은 5장 찾기
+   ============================================================ */
+const HAND_NAMES = ["하이카드", "원페어", "투페어", "트리플", "스트레이트", "플러시", "풀하우스", "포카드", "스트레이트 플러시"];
+
+function score5(cs) {
+  const v = cs.map(rv).sort((a, b) => b - a);
+  const flush = cs.every(c => c[1] === cs[0][1]);
+  const uniq = [...new Set(v)];
+  let straightHigh = 0;
+  if (uniq.length === 5) {
+    if (v[0] - v[4] === 4) straightHigh = v[0];
+    else if (v.join() === "14,5,4,3,2") straightHigh = 5;   // A-2-3-4-5 (휠)
+  }
+  // 같은 숫자 개수로 묶고, (개수 많은 순 → 숫자 큰 순) 정렬
+  const cnt = {};
+  v.forEach(x => cnt[x] = (cnt[x] || 0) + 1);
+  const groups = Object.entries(cnt).map(([r, n]) => [n, +r]).sort((a, b) => b[0] - a[0] || b[1] - a[1]);
+  const ranksByGroup = groups.map(g => g[1]);
+  let cat, tie;
+  if (straightHigh && flush) { cat = 8; tie = [straightHigh]; }
+  else if (groups[0][0] === 4) { cat = 7; tie = ranksByGroup; }
+  else if (groups[0][0] === 3 && groups[1][0] === 2) { cat = 6; tie = ranksByGroup; }
+  else if (flush) { cat = 5; tie = v; }
+  else if (straightHigh) { cat = 4; tie = [straightHigh]; }
+  else if (groups[0][0] === 3) { cat = 3; tie = ranksByGroup; }
+  else if (groups[0][0] === 2 && groups[1][0] === 2) { cat = 2; tie = ranksByGroup; }
+  else if (groups[0][0] === 2) { cat = 1; tie = ranksByGroup; }
+  else { cat = 0; tie = v; }
+  // 하나의 숫자로 만들어서 크기 비교가 쉽게 (15진법)
+  let score = cat;
+  for (let i = 0; i < 5; i++) score = score * 15 + (tie[i] || 0);
+  return { score, cat };
+}
+
+function bestHand(cards) {
+  let best = null;
+  const n = cards.length;
+  for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) for (let c = b + 1; c < n; c++)
+    for (let d = c + 1; d < n; d++) for (let e = d + 1; e < n; e++) {
+      const h = score5([cards[a], cards[b], cards[c], cards[d], cards[e]]);
+      if (!best || h.score > best.score) best = h;
+    }
+  if (!best) return null;
+  best.name = best.cat === 8 && Math.floor(best.score / 15 ** 4) % 15 === 14 ? "로열 플러시" : HAND_NAMES[best.cat];
+  return best;
+}
+
+/* ============================================================
+   ⑩ 게임 진행 규칙 (상태 s를 직접 바꾸는 순수 로직)
+   ============================================================ */
+function freshState(cfg) {
+  return { cfg: cfg || { stack: 20000, sb: 100, bb: 200 }, seats: Array(SEATS).fill(null), hand: null, button: -1, handNo: 0, blindFrom: 0 };
+}
+// no번째 핸드의 블라인드. 설정을 저장한 뒤부터 BLIND_EVERY 핸드마다 BLIND_MULT배
+// left: 이 핸드 뒤로 같은 레벨이 몇 핸드 더 남았는지
+function blindsAt(s, no) {
+  const n = Math.max(0, no - 1 - (s.blindFrom || 0));
+  const lvl = Math.floor(n / BLIND_EVERY), m = BLIND_MULT ** lvl;
+  return { lvl: lvl + 1, sb: s.cfg.sb * m, bb: s.cfg.bb * m, left: BLIND_EVERY - 1 - n % BLIND_EVERY };
+}
+const bOf = (s, h) => (h && h.blinds) || s.cfg;                          // 이번 핸드에 적용된 블라인드
+const inHand = h => h.p.map((q, i) => q ? i : -1).filter(i => i >= 0);   // 이번 핸드 참가 좌석 번호들
+const potOf = h => h.p.reduce((t, q) => t + (q ? q.total : 0), 0);
+const seatName = (s, i) => (s.seats[i] && s.seats[i].name) || ("좌석 " + (i + 1));
+
+function addLog(s, msg) {
+  s.hand.log.push(msg);
+  if (s.hand.log.length > 40) s.hand.log.shift();
+}
+
+// 다음 행동할 사람: 시계방향으로 폴드·올인 안 했고, 아직 행동 안 했거나 콜할 금액이 남은 사람
+function nextActor(h, from) {
+  for (let k = 1; k <= SEATS; k++) {
+    const j = (from + k) % SEATS, q = h.p[j];
+    if (q && !q.folded && !q.allIn && (!q.acted || q.bet < h.currentBet)) return j;
+  }
+  return -1;
+}
+
+// 아무도 받지 않은 베팅(콜 안 된 금액)은 베팅 라운드가 끝날 때 베팅한 사람에게 돌려줌
+function returnUncalled(s) {
+  const h = s.hand, ids = inHand(h);
+  const bets = ids.map(i => h.p[i].bet).sort((a, b) => b - a);
+  const extra = bets[0] - (bets[1] || 0);
+  if (!extra) return;
+  const i = ids.find(j => h.p[j].bet === bets[0]), q = h.p[i];
+  q.bet -= extra; q.total -= extra; s.seats[i].stack += extra;
+  q.allIn = false;
+  addLog(s, `${seatName(s, i)} 콜 안 된 ${extra} 돌려받음`);
+}
+
+// 레이즈 가능 여부: 이번 라운드에 아직 행동 안 했거나, 내가 마지막으로 행동한 뒤 오른 금액이
+// 풀 레이즈 이상이어야 함 (짧은 올인 여러 번이 합쳐서 풀 레이즈가 되면 다시 열림 — TDA 규칙)
+// 그리고 내 레이즈에 대응할 사람이 남아 있어야 함
+function mayRaise(h, i, stack) {
+  const q = h.p[i];
+  const open = !q.acted || h.currentBet - (q.lvl || 0) >= h.minRaise;
+  return open && q.bet + stack > h.currentBet
+    && inHand(h).some(j => j !== i && !h.p[j].folded && !h.p[j].allIn);
+}
+
+// 팟 나누기: 각자 넣은 총액을 올인 금액마다 층층이 잘라서,
+// 그 층까지 칩을 넣었고 폴드 안 한 사람만 그 층(팟)을 가져갈 수 있음
+function potsOf(h) {
+  const ids = inHand(h), live = ids.filter(i => !h.p[i].folded);
+  const levels = [...new Set(ids.map(i => h.p[i].total).filter(x => x > 0))].sort((a, b) => a - b);
+  const pots = [];
+  let prev = 0;
+  for (const lvl of levels) {
+    let amt = 0;
+    ids.forEach(i => amt += Math.min(h.p[i].total, lvl) - Math.min(h.p[i].total, prev));
+    const elig = live.filter(i => h.p[i].total >= lvl);
+    const last = pots[pots.length - 1];
+    if (!elig.length && last) last.amt += amt;                          // 폴드한 사람만 넣은 층은 바로 아래 팟에 합침
+    else if (last && last.elig.join() === elig.join()) last.amt += amt;  // 가져갈 사람이 같으면 한 팟
+    else pots.push({ amt, elig: elig.length ? elig : live });
+    prev = lvl;
+  }
+  return pots;
+}
+
+// 칩을 팟에 넣기
+function put(s, i, amt) {
+  const q = s.hand.p[i], st = s.seats[i];
+  amt = Math.max(0, Math.min(amt, st.stack));
+  st.stack -= amt; q.bet += amt; q.total += amt;
+  if (st.stack === 0) q.allIn = true;
+  return amt;
+}
+
+// 새 핸드 시작: 버튼 이동 → 블라인드 → 카드 2장씩
+function startHand(s) {
+  s.seats = s.seats.map(x => x && x.leave ? null : x);          // 나간 사람 정리
+  s.seats.forEach(x => { if (isBot(x) && x.stack === 0) x.stack = s.cfg.stack; });   // AI는 칩이 떨어지면 자동 리바이
+  const elig = [];
+  for (let i = 0; i < SEATS; i++) { const x = s.seats[i]; if (x && x.stack > 0 && !x.away) elig.push(i); }
+  if (elig.length < 2) { s.hand = null; return; }
+  // 이번 핸드를 못 받는 사람(쉬는 중·칩 없음)은 블라인드를 건너뛴 것으로 표시 → 돌아오면 BB를 내고 들어옴
+  s.seats.forEach((x, i) => { if (x && !elig.includes(i)) x.missed = true; });
+  const nextElig = from => { for (let k = 1; k <= SEATS; k++) { const j = (from + k + SEATS) % SEATS; if (elig.includes(j)) return j; } };
+  const button = nextElig(s.button);
+  const sb = elig.length === 2 ? button : nextElig(button);       // 헤즈업이면 버튼이 SB
+  const bb = nextElig(sb);
+  const deck = newDeck();
+  const p = Array(SEATS).fill(null);
+  elig.forEach(i => p[i] = { bet: 0, total: 0, folded: false, allIn: false, acted: false, lvl: 0, cards: [] });
+  // 카드는 SB부터 시계방향으로 한 장씩 두 바퀴
+  const dealOrder = elig.slice().sort((a, b) => (a - sb + SEATS) % SEATS - (b - sb + SEATS) % SEATS);
+  for (let r = 0; r < 2; r++) dealOrder.forEach(i => p[i].cards.push(deck.pop()));
+  s.button = button;
+  s.handNo += 1;
+  const bl = blindsAt(s, s.handNo);
+  s.hand = { no: s.handNo, button, sb, bb, deck, board: [], street: "preflop", p, blinds: { sb: bl.sb, bb: bl.bb, lvl: bl.lvl },
+             currentBet: bl.bb, minRaise: bl.bb, toAct: -1, turnAt: Date.now(), log: [], result: null };
+  if (bl.lvl > 1 && bl.left === BLIND_EVERY - 1) addLog(s, `블라인드 레벨 ${bl.lvl} — ${bl.sb}/${bl.bb}`);
+  put(s, sb, bl.sb);
+  put(s, bb, bl.bb);
+  addLog(s, `#${s.handNo} 핸드 시작 · ${seatName(s, sb)} SB ${bl.sb} · ${seatName(s, bb)} BB ${bl.bb}`);
+  // 중간에 앉았거나 쉬었다 돌아온 사람: 블라인드 자리가 아니면 BB만큼 내고 참여
+  // (라이브 블라인드라서 BB처럼 자기 차례에 체크·레이즈 가능)
+  elig.forEach(i => {
+    const x = s.seats[i];
+    if (x.missed && i !== sb && i !== bb) addLog(s, `${seatName(s, i)} 포스트 ${put(s, i, bl.bb)}`);
+    x.missed = false;
+  });
+  advance(s, bb);
+}
+
+// 행동 이후: 베팅 라운드가 끝났는지 보고 다음 사람 / 다음 스트리트로
+function advance(s, from) {
+  const h = s.hand;
+  const live = inHand(h).filter(i => !h.p[i].folded);
+  if (live.length === 1) return finishUncontested(s, live[0]);
+  const can = live.filter(i => !h.p[i].allIn);
+  let done;
+  if (can.length === 0) done = true;
+  // 칩이 남은 사람이 한 명뿐이면, 올인한 사람들 중 최고 베팅만 맞췄으면 끝
+  // (예: BB가 SB보다 적게 올인하면 SB는 더 할 게 없음)
+  else if (can.length === 1) done = h.p[can[0]].bet >= Math.max(0, ...live.filter(i => i !== can[0]).map(i => h.p[i].bet));
+  else done = can.every(i => h.p[i].acted && h.p[i].bet === h.currentBet);
+  if (!done) { h.toAct = nextActor(h, from); h.turnAt = Date.now(); return; }
+
+  // 라운드 종료 → 다음 스트리트. 더 베팅할 사람이 없으면 리버까지 자동으로 깐다
+  while (true) {
+    returnUncalled(s);
+    inHand(h).forEach(i => { h.p[i].bet = 0; h.p[i].acted = false; });
+    h.currentBet = 0; h.minRaise = bOf(s, h).bb;
+    if (h.street === "river") return showdown(s);
+    h.deck.pop();                                                  // 번 카드
+    if (h.street === "preflop") { h.board.push(h.deck.pop(), h.deck.pop(), h.deck.pop()); h.street = "flop"; }
+    else if (h.street === "flop") { h.board.push(h.deck.pop()); h.street = "turn"; }
+    else { h.board.push(h.deck.pop()); h.street = "river"; }
+    if (can.length >= 2) { h.toAct = nextActor(h, h.button); h.turnAt = Date.now(); return; }
+  }
+}
+
+// 모두 폴드해서 한 명만 남음
+function finishUncontested(s, w) {
+  returnUncalled(s);
+  const h = s.hand, amt = potOf(h);
+  s.seats[w].stack += amt;
+  h.street = "done"; h.toAct = -1;
+  h.result = { winners: [{ seat: w, amount: amt, label: "" }], shown: [] };
+  addLog(s, `${seatName(s, w)} ${amt} 획득 (모두 폴드)`);
+}
+
+// 쇼다운: 사이드팟을 나누고 각 팟마다 승자 결정
+function showdown(s) {
+  const h = s.hand, live = inHand(h).filter(i => !h.p[i].folded);
+  const hands = {};
+  live.forEach(i => hands[i] = bestHand(h.p[i].cards.concat(h.board)));
+  const pots = potsOf(h);
+
+  // 팟마다 최고 족보 찾기. 똑같으면 똑같이 나누고, 나눠떨어지지 않는 칩은 버튼 왼쪽부터 1개씩
+  // 스플릿: 족보 점수(키커까지 포함한 5장 전체)가 완전히 같을 때만 나눔
+  const won = {}, shared = new Set(), solo = new Set();
+  const order = i => (i - h.button - 1 + SEATS) % SEATS;
+  pots.forEach((pot, k) => {
+    const top = Math.max(...pot.elig.map(i => hands[i].score));
+    const ws = pot.elig.filter(i => hands[i].score === top).sort((a, b) => order(a) - order(b));
+    const share = Math.floor(pot.amt / ws.length);
+    let rem = pot.amt - share * ws.length;
+    ws.forEach(i => { won[i] = (won[i] || 0) + share + (rem-- > 0 ? 1 : 0); (ws.length > 1 ? shared : solo).add(i); });
+    const potName = pots.length === 1 ? "팟" : k === 0 ? "메인 팟" : `사이드 팟 ${k}`;
+    addLog(s, ws.length > 1
+      ? `${potName} ${pot.amt} 스플릿 → ${ws.map(i => `${seatName(s, i)} ${share + (pot.amt - share * ws.length > ws.indexOf(i) ? 1 : 0)}`).join(" / ")} · ${hands[ws[0]].name}`
+      : `${potName} ${pot.amt} → ${seatName(s, ws[0])} · ${hands[ws[0]].name}`);
+  });
+  // split: 가져간 팟이 전부 나눈 팟이면 스플릿으로 표시
+  const winners = Object.keys(won).map(Number).map(i => ({ seat: i, amount: won[i], label: hands[i].name, split: shared.has(i) && !solo.has(i) }));
+  winners.forEach(w => { s.seats[w.seat].stack += w.amount; });
+  h.street = "done"; h.toAct = -1;
+  h.result = { winners, shown: live, labels: Object.fromEntries(live.map(i => [i, hands[i].name])) };
+}
+
+// 플레이어 행동: fold / check / call / raise(to = 최종 베팅액)
+function act(s, i, type, to) {
+  const h = s.hand, q = h.p[i], st = s.seats[i], name = seatName(s, i);
+  if (type === "fold") { q.folded = true; addLog(s, `${name} 폴드`); }
+  else if (type === "check") { if (q.bet !== h.currentBet) return false; addLog(s, `${name} 체크`); }
+  else if (type === "call") {
+    const a = put(s, i, h.currentBet - q.bet);
+    addLog(s, `${name} 콜 ${a}${q.allIn ? " (올인)" : ""}`);
+  } else if (type === "raise") {
+    const maxTo = q.bet + st.stack;
+    to = Math.min(Math.floor(to), maxTo);
+    if (to <= h.currentBet || !mayRaise(h, i, st.stack)) return false;
+    if (to < h.currentBet + h.minRaise && to < maxTo) return false;   // 최소 레이즈 미만은 올인일 때만
+    const inc = to - h.currentBet, wasBet = h.currentBet === 0;
+    // 최소 레이즈(첫 벳이면 BB) 미만 올인은 "불완전 레이즈" — 최소 레이즈 기준도 안 바뀜
+    const full = inc >= h.minRaise;
+    put(s, i, to - q.bet);
+    if (full) h.minRaise = inc;
+    h.currentBet = to;
+    // 풀 레이즈면 다른 사람들 다시 레이즈까지 가능. 불완전 레이즈면 이미 행동한 사람은 콜/폴드만
+    if (full) inHand(h).forEach(j => { if (j !== i) h.p[j].acted = false; });
+    addLog(s, `${name} ${wasBet ? "벳" : "레이즈"} ${to}${q.allIn ? " (올인)" : ""}`);
+  }
+  q.acted = true; q.lvl = h.currentBet;   // lvl: 내가 마지막으로 행동했을 때의 베팅 금액
+  advance(s, i);
+}
+
+// 내 차례가 아닐 때 폴드 (자리 떠나기)
+function foldOutOfTurn(s, i) {
+  const h = s.hand, q = h && h.p[i];
+  if (!q || q.folded || h.street === "done") return;
+  if (h.toAct === i) return act(s, i, "fold");
+  q.folded = true; q.acted = true;
+  addLog(s, `${seatName(s, i)} 폴드`);
+  const live = inHand(h).filter(j => !h.p[j].folded);
+  if (live.length === 1) finishUncontested(s, live[0]);
+}
+
+/* ============================================================
+   ⑪ 방장이 규칙을 적용 — 친구 폰은 "무엇을 눌렀는지"만 방장에게 보내고,
+      방장 폰이 상태를 바꾼 뒤 모두에게 새 상태를 보낸다
+   ============================================================ */
+const seatOf = (s, id) => s ? s.seats.findIndex(x => x && x.id === id) : -1;
+const mySeat = s => seatOf(s, myId);
+
+// 방장만 실행. id = 버튼을 누른 사람(기기 번호). 모두 "최신 상태에서 여전히 유효한지" 다시 확인한다
+const ACTIONS = {
+  act(s, id, { no, type, to }) {
+    const me = seatOf(s, id);
+    if (!s.hand || s.hand.no !== no || s.hand.toAct !== me) return false;
+    return act(s, me, type, to);
+  },
+  sit(s, id, { i, name }) {
+    if (i < 0 || i >= SEATS || s.seats[i] || seatOf(s, id) >= 0) return false;
+    // 게임이 이미 진행 중이면 첫 핸드에 BB를 내고 들어옴
+    s.seats[i] = { id, name: String(name || "플레이어").slice(0, 10), stack: s.cfg.stack, away: false, leave: false, missed: !!s.hand };
+  },
+  start(s) { if (s.hand && s.hand.street !== "done") return false; startHand(s); },
+  leave(s, id) {
+    const i = seatOf(s, id); if (i < 0) return false;
+    const h = s.hand;
+    if (h && h.p[i] && h.street !== "done") { foldOutOfTurn(s, i); s.seats[i].leave = true; }
+    else s.seats[i] = null;
+  },
+  away(s, id, { v }) { const i = seatOf(s, id); if (i < 0) return false; s.seats[i].away = !!v; },
+  rebuy(s, id) {
+    const i = seatOf(s, id); if (i < 0 || s.seats[i].stack > 0) return false;
+    const h = s.hand;
+    if (h && h.p[i] && !h.p[i].folded && h.street !== "done") return false;
+    s.seats[i].stack = s.cfg.stack;
+    if (h) addLog(s, `${seatName(s, i)} 리바이 ${s.cfg.stack}`);
+  },
+  force(s, id, { no, t }) {
+    const h = s.hand;
+    if (!h || h.no !== no || h.toAct !== t || Date.now() - h.turnAt < TURN_MS) return false;
+    addLog(s, `${seatName(s, t)} 시간 초과`);
+    act(s, t, h.p[t].bet === h.currentBet ? "check" : "fold");   // 체크할 수 있으면 체크, 아니면 폴드
+  },
+  // 설정을 저장하면 블라인드 레벨은 1부터 다시 시작
+  config(s, id, { cfg }) {
+    if (seatOf(s, id) < 0 || (s.hand && s.hand.street !== "done")) return false;
+    s.cfg = { stack: Math.max(100, cfg.stack | 0), sb: Math.max(1, cfg.sb | 0), bb: Math.max(cfg.sb | 0, cfg.bb | 0) };
+    s.blindFrom = s.handNo;
+  },
+  reset(s, id) {
+    if (id !== myId) return false;                                // 리셋은 방장만
+    const seats = s.seats.map(x => x && !x.leave ? { ...x, stack: s.cfg.stack, away: false } : null);
+    Object.assign(s, freshState(s.cfg), { seats });
+  },
+  addBot(s, id) {
+    const i = s.seats.findIndex(x => !x);
+    if (i < 0 || seatOf(s, id) < 0) return false;
+    const used = new Set(s.seats.filter(isBot).map(x => x.name));
+    let n = 1;
+    while (used.has("AI " + n)) n++;
+    s.seats[i] = { id: "bot-" + Math.random().toString(36).slice(2, 8), name: "AI " + n, stack: s.cfg.stack, away: false, leave: false, missed: !!s.hand };
+  },
+  removeBots(s) {
+    s.seats.forEach((x, i) => {
+      if (!isBot(x)) return;
+      const h = s.hand;
+      if (h && h.p[i] && h.street !== "done") { foldOutOfTurn(s, i); x.leave = true; }
+      else s.seats[i] = null;
+    });
+  },
+};
+
+// 방장: 상태 사본을 바꿔 보고, 바뀌었으면 저장 + 모두에게 전송
+function hostMutate(fn) {
+  const s = JSON.parse(JSON.stringify(S || freshState()));
+  if (fn(s) === false) return;
+  S = s;
+  publish();
+}
+function hostApply(name, args, id) {
+  if (!Object.hasOwn(ACTIONS, name) || !id) return;
+  hostMutate(s => ACTIONS[name](s, id, args || {}));
+}
+
+// 버튼을 누르면: 방장은 바로 적용, 친구는 방장에게 전송
+function send(name, args) {
+  if (isHost()) hostApply(name, args, myId);
+  else if (hostConn && hostConn.open) hostConn.send({ t: "do", name, args });
+  else toast("방장과 연결이 끊겼어요. 다시 연결하는 중이에요.");
+}
+function doAct(type, to) { raiseOpen = false; send("act", { no: S.hand.no, type, to }); }
+const doSit = (i, name) => send("sit", { i, name });
+const doStart = () => send("start");
+const doLeave = () => send("leave");
+const doAway = v => send("away", { v });
+const doRebuy = () => send("rebuy");
+const doForceFold = () => send("force", { no: S.hand.no, t: S.hand.toAct });
+const doConfig = cfg => send("config", { cfg });
+const doReset = () => send("reset");
+const doAddBot = () => send("addBot");
+const doRemoveBots = () => send("removeBots");
+
+// 친구에게 보낼 상태: 다른 사람의 카드와 남은 덱은 지워서 보냄 (쇼다운에서 공개된 카드만 남김)
+function viewFor(id) {
+  const v = JSON.parse(JSON.stringify(S)), h = v.hand;
+  if (h) {
+    const me = seatOf(v, id), shown = h.result ? h.result.shown : [];
+    h.deck = [];
+    h.p.forEach((q, j) => { if (q && j !== me && !shown.includes(j)) q.cards = []; });
+  }
+  return v;
+}
+function publish() {
+  try { localStorage.setItem("holdem-host", JSON.stringify({ code: roomCode, S })); } catch (e) {}
+  conns.forEach(c => { if (c.open && c.pid) c.send({ t: "state", s: viewFor(c.pid), now: Date.now() }); });
+  render();
+}
+
+/* ============================================================
+   ⑪-2 AI 플레이어 (혼자 테스트할 때)
+   - AI 행동은 방장 폰이 계산해서 적용
+   ============================================================ */
+const isBot = x => !!x && String(x.id).startsWith("bot-");
+
+// AI 판단: 패 세기(0~1)를 대충 매기고, 팟 대비 콜 금액과 비교
+function botMove(s, i) {
+  const h = s.hand, q = h.p[i], st = s.seats[i];
+  const toCall = Math.min(h.currentBet - q.bet, st.stack), pot = potOf(h);
+  let str;
+  if (h.board.length < 3) {
+    const [a, b] = q.cards.map(rv).sort((x, y) => y - x);
+    str = a === b ? 0.55 + a / 30 : (a + b) / 30 + (q.cards[0][1] === q.cards[1][1] ? 0.05 : 0) + (a - b <= 2 ? 0.03 : 0);
+  } else str = [0.3, 0.55, 0.72, 0.8, 0.86, 0.9, 0.94, 0.98, 1][bestHand(q.cards.concat(h.board)).cat];
+  const r = Math.random(), odds = toCall / (pot + toCall || 1);
+  const bl = bOf(s, h);
+  const raiseTo = h.currentBet + Math.max(h.minRaise, Math.round(pot * 0.6 / bl.sb) * bl.sb);
+  if (str > 0.78 && r < 0.55) return ["raise", raiseTo];
+  if (toCall === 0) return str > 0.6 && r < 0.35 ? ["raise", raiseTo] : ["check"];
+  if (str >= odds + 0.3 || (toCall <= bl.bb && r < 0.75)) return ["call"];
+  return ["fold"];
+}
+
+// AI 차례가 오면 1~1.6초 뒤 행동 저장 (같은 차례에 한 번만)
+let botKey = "";
+function scheduleBot(s, me) {
+  const h = s.hand;
+  if (!isHost() || !h || h.street === "done" || h.toAct < 0 || !isBot(s.seats[h.toAct])) return;
+  const key = h.no + ":" + h.log.length;
+  if (key === botKey) return;
+  botKey = key;
+  const no = h.no, t = h.toAct;
+  setTimeout(() => {
+    hostMutate(st => {
+      const hh = st.hand;
+      if (!hh || hh.no !== no || hh.toAct !== t || !isBot(st.seats[t])) return false;
+      const [type, to] = botMove(st, t);
+      if (act(st, t, type, to) === false) act(st, t, hh.p[t].bet === hh.currentBet ? "check" : "call");
+    });
+  }, 1000 + Math.random() * 600);
+}
+
+/* ============================================================
+   ⑫ 화면 그리기
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// key: 카드 자리 이름. 직전 화면에 없던 카드에만 new(등장 애니메이션)를 붙여서
+// 화면을 다시 그릴 때마다 카드가 깜빡이지 않게 함
+let seenCards = new Set(), nextSeen = new Set();
+// flipDelay: 숫자를 주면 그 초만큼 기다렸다가 뒤집히는 카드(보드용)
+function cardHTML(c, cls = "", key = "", flipDelay = null) {
+  if (!c) return `<div class="card slot ${cls}"></div>`;
+  if (key) { key += c; nextSeen.add(key); if (!seenCards.has(key)) cls += " new"; }
+  if (c === "back") return `<div class="card back ${cls}"></div>`;
+  const red = c[1] === "h" || c[1] === "d";
+  const style = flipDelay != null ? ` style="--d:${flipDelay}s"` : "";
+  return `<div class="card ${red ? "red" : ""} ${cls}${flipDelay != null ? " flip" : ""}"${style}>${faceInner(c, cls.includes("lg"))}</div>`;
+}
+// 카드 앞면 내용. 큰 카드는 모서리에도 숫자를 넣어서 조금만 까도 보이게
+function faceInner(c, big) {
+  const r = c[0] === "T" ? "10" : c[0], s = SUIT_SYM[c[1]];
+  const ix = big ? `<span class="ix tl">${r}<br>${s}</span><span class="ix br">${r}<br>${s}</span>` : "";
+  return `${ix}<span class="r">${r}</span><span class="s">${s}</span>`;
+}
+
+// 보드: 바뀐 부분이 있을 때만 다시 그리고, 새로 깔린 카드는 한 장씩 시차를 두고 뒤집음
+// (올인 후 한꺼번에 깔리면 턴·리버는 더 뚸 들여서 긴장감 있게)
+let boardSig = "", revealUntil = 0;
+function renderBoard(h) {
+  const board = h ? h.board : [], sig = h ? h.no + ":" + board.join(",") : "";
+  if (sig === boardSig) return;
+  const [prevNo, prevCards = ""] = boardSig.split(":");
+  const keep = h && prevNo === String(h.no) ? prevCards.split(",").filter(Boolean).length : 0;
+  boardSig = sig;
+  let d = 0;
+  $("board").innerHTML = [0, 1, 2, 3, 4].map(k => {
+    const c = board[k];
+    if (!c || k < keep) return cardHTML(c);
+    d += d === 0 ? 0.15 : (k <= 2 ? 0.6 : 1.3);
+    return cardHTML(c, "", "", d);
+  }).join("");
+  if (d) {
+    revealUntil = Date.now() + (d + 0.6) * 1000;
+    setTimeout(render, (d + 0.65) * 1000);   // 다 뒤집힌 뒤 결과 공개
+  }
+}
+
+// 내 카드 까기
+let peeled = {}, mineSig = "", actsSig = "";
+function peelHTML(c, k, folded) {
+  const red = c[1] === "h" || c[1] === "d";
+  return `<div class="card lg peel ${red ? "red" : ""} ${folded ? "dim" : ""}" data-k="${k}" tabindex="0" role="button" aria-label="내 카드 ${k + 1} 까기">${faceInner(c, true)}<div class="cover"></div></div>`;
+}
+function bindPeel(el, no) {
+  const cover = el.querySelector(".cover");
+  let sx = 0, sy = 0, dx = 0, dy = 0, on = false;
+  const open = () => {
+    cover.style.opacity = "0";
+    setTimeout(() => { peeled[no + "-" + el.dataset.k] = true; render(); }, 260);
+  };
+  el.addEventListener("pointerdown", e => {
+    on = true; sx = e.clientX; sy = e.clientY; dx = dy = 0;
+    el.setPointerCapture(e.pointerId); cover.classList.add("drag");
+  });
+  el.addEventListener("pointermove", e => {
+    if (!on) return;
+    dx = e.clientX - sx; dy = e.clientY - sy;
+    cover.style.transform = `translate(${dx}px, ${dy}px) rotate(${dx * 0.15}deg)`;
+  });
+  const end = () => {
+    if (!on) return;
+    on = false; cover.classList.remove("drag");
+    if (Math.hypot(dx, dy) > el.offsetHeight * 0.6) {         // 카드 높이의 60% 넘게 끌면 완전히 열림
+      cover.style.transform = `translate(${dx * 3}px, ${dy * 3}px) rotate(${dx * 0.4}deg)`;
+      open();
+    } else cover.style.transform = "";                         // 덜 끌면 다시 덮임
+  };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+  el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+}
+let toastT;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 3500); }
+
+function render() {
+  nextSeen = new Set();
+  const s = S || freshState();
+  const h = s.hand, me = mySeat(s);
+  // 블라인드 표시: 진행 중이면 이번 핸드, 아니면 다음 핸드 기준
+  const live = h && h.street !== "done";
+  const bl = blindsAt(s, live ? h.no : s.handNo + 1);
+  const cur = live ? bOf(s, h) : bl;
+  $("blinds").innerHTML = `레벨 ${bl.lvl} · 블라인드 <b>${cur.sb}/${cur.bb}</b> · `
+    + (bl.left ? `${bl.left}핸드 뒤 2배` : `다음 핸드부터 2배`) + ` · 바이인 <b>${s.cfg.stack}</b>`;
+
+  // 가운데: 팟, 보드, 결과 문구
+  // 올인으로 팟이 갈라지면 메인/사이드 팟 금액도 표시 (가져갈 사람이 1명뿐인 층은 콜 안 된 베팅이라 제외)
+  const pots = h ? potsOf(h).filter(p => p.elig.length > 1) : [];
+  $("pot").innerHTML = h ? `팟 <span>${potOf(h).toLocaleString()}</span>`
+    + (pots.length > 1 ? `<small>${pots.map((p, k) => `${k ? "사이드 " + k : "메인"} ${p.amt.toLocaleString()}`).join(" · ")}</small>` : "") : "";
+  renderBoard(h);
+  // 보드 카드가 뒤집히는 동안에는 승자·카드 공개·칩 변화를 숨김 (스포 방지)
+  const hide = !!(h && h.street === "done" && Date.now() < revealUntil);
+  let banner = "";
+  if (!mode) banner = "아래에서 방을 만들거나 방 코드로 들어오세요.";
+  else if (!S) banner = "방장에게 연결하는 중…";
+  else if (!h) banner = s.seats.filter(Boolean).length < 2 ? "빈 자리를 눌러 앉으세요. 2명부터 시작해요." : "준비되면 아래에서 게임을 시작하세요.";
+  else if (hide) banner = "쇼다운…";
+  else if (h.street === "done") banner = (h.result.winners.some(w => w.split) ? "<b>스플릿</b> · " : "")
+    + h.result.winners.map(w => `${esc(seatName(s, w.seat))} +${w.amount.toLocaleString()}${w.label ? " · " + w.label : ""}`).join(" / ");
+  else banner = { preflop: "프리플랍", flop: "플랍", turn: "턴", river: "리버" }[h.street];
+  $("banner").innerHTML = banner;
+
+  // 좌석: 내 자리가 항상 아래 가운데로 오도록 회전
+  document.querySelectorAll(".seat").forEach(e => e.remove());
+  const base = me >= 0 ? me : 0;
+  const winSet = new Set(h && h.result && !hide ? h.result.winners.map(w => w.seat) : []);
+  // 내가 이겼으면 큰 WIN (같은 핸드에서는 내용이 안 바뀌므로 애니메이션은 한 번만)
+  const myWin = me >= 0 && winSet.has(me) ? h.result.winners.find(w => w.seat === me) : null;
+  const bw = $("bigwin");
+  if (myWin) {
+    const txt = `${myWin.split ? "SPLIT" : "WIN"}<span>+${myWin.amount.toLocaleString()}${myWin.label ? " · " + myWin.label : ""}</span>`;
+    if (bw.innerHTML !== txt) bw.innerHTML = txt;
+    bw.hidden = false;
+  } else bw.hidden = true;
+  const pendingWin = i => hide ? ((h.result.winners.find(w => w.seat === i) || {}).amount || 0) : 0;
+  for (let i = 0; i < SEATS; i++) {
+    const slot = (i - base + SEATS) % SEATS;
+    const ang = (90 + slot * 40) * Math.PI / 180;
+    const el = document.createElement("div");
+    el.className = "seat";
+    el.style.left = (50 + 44 * Math.cos(ang)) + "%";
+    el.style.top = (50 + 47 * Math.sin(ang)) + "%";
+    const x = s.seats[i];
+    if (!x) {
+      el.innerHTML = `<button class="sit" ${me >= 0 || !S ? "disabled" : ""} aria-label="좌석 ${i + 1}에 앉기">앉기</button>`;
+      el.querySelector("button").onclick = () => openSit(i);
+    } else {
+      const q = h && h.p[i];
+      const shown = !hide && h && h.result && h.result.shown.includes(i);
+      let cards = "";
+      if (q) {
+        if (shown) cards = q.cards.map((c, k) => cardHTML(c, "sm" + (q.folded ? " dim" : ""), `h${h.no}s${i}${k}`)).join("");
+        else if (i === me) cards = q.cards.map((c, k) => cardHTML(peeled[h.no + "-" + k] ? c : "back", "sm" + (q.folded ? " dim" : ""), `h${h.no}s${i}${k}`)).join("");
+        else if (!q.folded) cards = cardHTML("back", "sm", `h${h.no}s${i}0`) + cardHTML("back", "sm", `h${h.no}s${i}1`);
+      }
+      let tag = "";
+      if (x.leave) tag = "나가는 중";
+      else if (x.away) tag = "자리 비움";
+      else if (q && q.folded) tag = "폴드";
+      else if (q && q.allIn) tag = "올인";
+      else if (shown && h.result.labels) tag = h.result.labels[i];
+      else if (!q && x.stack === 0) tag = "칩 없음";
+      else if (!q && h) tag = "다음 핸드부터";
+      if (h && h.sb === i && !tag) tag = "SB";
+      if (h && h.bb === i && !tag) tag = "BB";
+      const turn = h && h.toAct === i;
+      const wInfo = winSet.has(i) ? h.result.winners.find(w => w.seat === i) : null;
+      const won = wInfo ? wInfo.amount : 0;
+      el.classList.toggle("turn", !!turn);
+      el.classList.toggle("me", i === me);
+      el.classList.toggle("out", !!(q && q.folded) || !!x.away || (!q && !!h));
+      el.classList.toggle("win", !!won);
+      el.innerHTML = `
+        <div class="cards">${cards}</div>
+        <div class="plate">
+          ${won ? `<div class="winbadge">${wInfo.split ? "SPLIT" : "WIN"}</div>` : ""}
+          ${h && h.button === i ? '<div class="dealer">D</div>' : ""}
+          <div class="name">${esc(x.name)}${i === me ? " (나)" : ""}</div>
+          <div class="stack">${(x.stack - pendingWin(i)).toLocaleString()}</div>
+          <div class="tag">${esc(tag)}</div>
+          ${turn ? '<div class="timer"><i data-timer></i></div>' : ""}
+        </div>
+        <div class="bet">${won ? "+" + won : q && q.bet ? '<span class="chipdot"></span>' + q.bet : ""}</div>`;
+    }
+    $("table").appendChild(el);
+  }
+
+  renderDock(s, me, hide);
+  seenCards = nextSeen;
+  renderRoom();
+  renderLobby(s, me);
+  $("log").innerHTML = h && h.log.length ? h.log.slice().reverse().map(l => `<div>${esc(l)}</div>`).join("") : `<div>아직 진행한 핸드가 없어요.</div>`;
+  tickTimer();
+  scheduleAutoNext(s);
+  scheduleBot(s, me);
+}
+
+function renderDock(s, me, hide) {
+  const h = s.hand, d = $("acts");
+  const q = h && me >= 0 ? h.p[me] : null;
+
+  // 내 카드: 내용이 바뀐 때만 다시 그림 → 까는 도중에 다른 사람이 행동해도 끊기지 않음
+  const isOpen = k => !!q && (peeled[h.no + "-" + k] || (!hide && !!h.result && h.result.shown.includes(me)));
+  const allOpen = isOpen(0) && isOpen(1);
+  let label = "";
+  if (q && allOpen && !hide) {
+    if (h.board.length >= 3) label = bestHand(q.cards.concat(h.board)).name;
+    else if (q.cards[0][0] === q.cards[1][0]) label = "포켓 페어";
+  }
+  const sig = q ? [h.no, q.cards.join(), q.folded, isOpen(0), isOpen(1), label].join("|") : "none";
+  if (sig !== mineSig) {
+    mineSig = sig;
+    const cardsH = q
+      ? q.cards.map((c, k) => isOpen(k) ? cardHTML(c, "lg" + (q.folded ? " dim" : "")) : peelHTML(c, k, q.folded)).join("")
+      : cardHTML(null, "lg") + cardHTML(null, "lg");
+    $("mine").innerHTML = `<div class="cards">${cardsH}</div><div class="hand">${q && !allOpen ? "카드를 끌어서 까보세요" : label}</div>`;
+    $("mine").querySelectorAll(".peel").forEach(el => bindPeel(el, h.no));
+  }
+
+  const fmt = n => n.toLocaleString();
+  let acts = "", sheet = "", t = null;
+  if (!mode) acts = `<div class="status">방을 만들거나 들어오면 시작할 수 있어요.</div>`;
+  else if (!S) acts = `<div class="status">연결하는 중…</div>`;
+  else if (me < 0) acts = `<div class="status">테이블의 <b>앉기</b>를 눌러 참여하세요.</div>`;
+  else if (!h) acts = `<div class="status">다른 친구가 앉으면 게임을 시작할 수 있어요.</div>`;
+  else if (h.street === "done") acts = `<div class="status">핸드 종료. 잠시 후 다음 핸드가 시작돼요.</div><div class="row"><button class="btn gold" id="b-next">다음 핸드 바로 시작</button></div>`;
+  else if (h.toAct !== me) {
+    const late = now() - h.turnAt >= TURN_MS;
+    acts = `<div class="status"><b>${esc(seatName(s, h.toAct))}</b> 님 차례예요.${q && q.folded ? " (이번 핸드 폴드)" : ""}</div>`
+      + (late ? `<div class="row"><button class="btn warn" id="b-force">시간 초과 — 체크/폴드 처리</button></div>` : "");
+  } else {
+    // 내 차례 — 버튼은 [이름 / 금액] 두 줄로 써서 좁은 폰에서도 글자가 안 깨지게
+    const st = s.seats[me], toCall = Math.min(h.currentBet - q.bet, st.stack);
+    const maxTo = q.bet + st.stack;
+    const minTo = Math.min(h.currentBet + h.minRaise, maxTo);
+    const canRaise = mayRaise(h, me, st.stack);
+    const verb = h.currentBet === 0 ? "벳" : "레이즈";
+    t = { minTo, maxTo, verb, unit: bOf(s, h).sb, step: bOf(s, h).bb };
+    acts = `<div class="main">
+        <button class="btn act ghost" id="b-fold"><b>폴드</b></button>
+        ${toCall > 0
+          ? `<button class="btn act" id="b-call"><b>콜</b><small>${fmt(toCall)}${toCall === st.stack ? " 올인" : ""}</small></button>`
+          : `<button class="btn act" id="b-check"><b>체크</b></button>`}
+        <button class="btn act gold" id="b-raise" ${canRaise ? "" : "disabled"}><b>${raiseOpen ? "닫기" : verb}</b>${raiseOpen || !canRaise ? "" : `<small>${fmt(minTo)}~</small>`}</button>
+      </div>`;
+    if (raiseOpen && canRaise) {
+      const pot = potOf(h), clamp = v => Math.max(minTo, Math.min(v, maxTo));
+      const presets = [["최소", minTo], ["1/2 팟", h.currentBet + Math.round((pot + toCall) / 2)], ["팟", h.currentBet + pot + toCall], ["올인", maxTo]];
+      sheet = `<div class="sheet-in">
+          <div class="amt-row">
+            <button class="btn step" id="r-minus" aria-label="${fmt(t.step)} 줄이기">−</button>
+            <div class="amt"><small>${verb} 금액</small><output id="r-val"></output></div>
+            <button class="btn step" id="r-plus" aria-label="${fmt(t.step)} 늘리기">+</button>
+          </div>
+          <input type="range" id="r-slider" min="0" max="1000" step="1" aria-label="${verb} 금액">
+          <div class="presets">${presets.map(([n, v]) => `<button class="btn" data-to="${clamp(v)}">${n}</button>`).join("")}</div>
+          <button class="btn gold confirm" id="b-confirm"></button>
+        </div>`;
+    }
+  }
+
+  // 내용이 바뀐 때만 다시 그림 → 누르는 도중에 버튼이 새로 만들어져서 클릭이 사라지는 일이 없음
+  const aSig = acts + sheet;
+  if (aSig === actsSig) return;
+  actsSig = aSig;
+  d.innerHTML = acts;
+  $("sheet").innerHTML = sheet;
+
+  const on = (id, f) => { const e = $(id); if (e) e.onclick = f; };
+  on("b-fold", () => doAct("fold"));
+  on("b-check", () => doAct("check"));
+  on("b-call", () => doAct("call"));
+  on("b-raise", () => { raiseOpen = !raiseOpen; raiseTo = 0; render(); });
+  on("b-confirm", () => doAct("raise", raiseTo));
+  on("b-next", doStart);
+  on("b-force", doForceFold);
+  if (!sheet) return;
+
+  // 레이즈 금액: 화면 전체를 다시 그리지 않고 숫자·슬라이더만 바꿈
+  const sl = $("r-slider");
+  const setRaise = (v, fromSlider) => {
+    raiseTo = Math.max(t.minTo, Math.min(Math.round(v), t.maxTo));
+    $("r-val").textContent = fmt(raiseTo);
+    $("b-confirm").textContent = `${t.verb} ${fmt(raiseTo)}${raiseTo === t.maxTo ? " 올인" : ""}`;
+    if (!fromSlider) sl.value = t.maxTo > t.minTo ? Math.round((raiseTo - t.minTo) / (t.maxTo - t.minTo) * 1000) : 1000;
+  };
+  // 슬라이더 끝 = 올인, 그 사이는 SB 단위로 맞춤
+  sl.oninput = () => {
+    const pos = +sl.value;
+    setRaise(pos >= 1000 ? t.maxTo : Math.round((t.minTo + (t.maxTo - t.minTo) * pos / 1000) / t.unit) * t.unit, true);
+  };
+  on("r-minus", () => setRaise(raiseTo - t.step));
+  on("r-plus", () => setRaise(raiseTo + t.step));
+  $("sheet").querySelectorAll("[data-to]").forEach(b => b.onclick = () => setRaise(+b.dataset.to));
+  setRaise(raiseTo || t.minTo);
+}
+
+function renderLobby(s, me) {
+  const h = s.hand, L = $("lobby");
+  if (!mode) return renderEntry(L);
+  if (!S) { L.innerHTML = ""; return; }
+  const idle = !h || h.street === "done";
+  const st = me >= 0 ? s.seats[me] : null;
+  let html = "";
+  if (me >= 0) {
+    html += `<div class="panel"><h2>내 자리</h2><div class="row">`;
+    if (!h && s.seats.filter(x => x && x.stack > 0).length >= 2) html += `<button class="btn gold" id="l-start">게임 시작</button>`;
+    if (st.stack === 0) html += `<button class="btn gold" id="l-rebuy">리바이 ${s.cfg.stack}</button>`;
+    html += st.away ? `<button class="btn" id="l-back">다시 참여</button>` : `<button class="btn" id="l-away">잠깐 쉬기</button>`;
+    html += `<button class="btn" id="l-bot" ${s.seats.some(x => !x) ? "" : "disabled"}>AI 추가</button>`;
+    if (s.seats.some(isBot)) html += `<button class="btn" id="l-nobot">AI 모두 빼기</button>`;
+    html += `<button class="btn warn" id="l-leave">자리 떠나기</button></div></div>`;
+  }
+  if (idle && me >= 0) {
+    html += `<div class="panel"><h2>테이블 설정</h2><div class="row">
+      <label class="f" for="c-stack">바이인<input type="number" id="c-stack" min="100" step="100" value="${s.cfg.stack}"></label>
+      <label class="f" for="c-sb">시작 스몰 블라인드<input type="number" id="c-sb" min="1" value="${s.cfg.sb}"></label>
+      <label class="f" for="c-bb">시작 빅 블라인드<input type="number" id="c-bb" min="2" value="${s.cfg.bb}"></label>
+      <button class="btn" id="c-save">저장</button></div>
+      <div class="muted">바이인은 새로 앉거나 리바이할 때 받는 칩이에요. 블라인드는 ${BLIND_EVERY}핸드마다 ${BLIND_MULT}배로 오르고, 저장하면 레벨 1부터 다시 시작해요. 게임 중간에 앉거나 쉬었다 돌아오면 첫 핸드에 BB만큼 내고 들어와요.</div>
+      ${isHost() ? `<div class="row"><button class="btn warn" id="c-reset">${resetArm ? "정말 리셋할까요? 한 번 더 누르세요" : "모든 칩 리셋"}</button></div>` : ""}
+    </div>`;
+  }
+  L.innerHTML = html;
+  const on = (id, f) => { const e = $(id); if (e) e.onclick = f; };
+  on("l-start", doStart);
+  on("l-rebuy", doRebuy);
+  on("l-away", () => doAway(true));
+  on("l-back", () => doAway(false));
+  on("l-leave", doLeave);
+  on("l-bot", doAddBot);
+  on("l-nobot", doRemoveBots);
+  on("c-save", () => {
+    const stack = Math.max(100, +$("c-stack").value | 0), sb = Math.max(1, +$("c-sb").value | 0);
+    const bb = Math.max(sb, +$("c-bb").value | 0);
+    doConfig({ stack, sb, bb });
+    toast("설정을 저장했어요.");
+  });
+  on("c-reset", () => { if (!resetArm) { resetArm = true; render(); setTimeout(() => { resetArm = false; render(); }, 4000); } else { resetArm = false; doReset(); } });
+}
+
+// 입장 화면: 방 만들기 / 코드로 들어가기 (예전에 만든 방이 있으면 다시 열기)
+let entryShown = false;
+function renderEntry(L) {
+  if (entryShown) return;                      // 코드 입력 중에 다시 그려서 글자가 지워지지 않게
+  entryShown = true;
+  const saved = loadHost();
+  L.innerHTML = `<div class="panel"><h2>방 만들기</h2>
+      <div class="row">
+        ${saved ? `<button class="btn gold" id="e-reopen">내 방 ${saved.code} 다시 열기</button>` : ""}
+        <button class="btn ${saved ? "" : "gold"}" id="e-new">새 방 만들기</button>
+      </div>
+      <div class="muted">방을 만든 폰이 게임 서버가 돼요. 게임하는 동안 방장은 이 화면을 켜 두세요.</div>
+    </div>
+    <div class="panel"><h2>친구 방에 들어가기</h2>
+      <div class="row"><label class="f" for="e-code">방 코드<input type="text" class="code" id="e-code" inputmode="numeric" maxlength="4" autocomplete="off"></label>
+      <button class="btn gold" id="e-join">들어가기</button></div>
+    </div>`;
+  const inp = $("e-code");
+  const join = () => { const c = inp.value.replace(/\D/g, ""); if (c.length !== 4) return toast("4자리 방 코드를 입력하세요."); startGuest(c); };
+  $("e-join").onclick = join;
+  inp.onkeydown = e => { if (e.key === "Enter") join(); };
+  $("e-new").onclick = () => startHost(String(1000 + crypto.getRandomValues(new Uint32Array(1))[0] % 9000), null);
+  if (saved) $("e-reopen").onclick = () => startHost(saved.code, saved.S);
+}
+
+// 방 정보 줄: 방 코드, 연결 상태, 링크 공유
+let roomSig = "";
+function renderRoom() {
+  const sig = [mode, roomCode, linked, conns.size].join("|");
+  if (sig === roomSig) return;
+  roomSig = sig;
+  const R = $("room");
+  if (!mode) { R.innerHTML = ""; return; }
+  const state = isHost()
+    ? (linked ? `방장 · 친구 ${[...conns].filter(c => c.open).length}명 연결됨` : "방 여는 중…")
+    : (linked ? "방장과 연결됨" : "연결하는 중…");
+  R.innerHTML = `<span>방 코드 <b>${roomCode}</b></span><span><i class="dot ${linked ? "on" : ""}"></i>${state}</span>
+    <button class="btn" id="r-share">초대 링크 보내기</button>`;
+  $("r-share").onclick = async () => {
+    const url = location.origin + location.pathname + "?room=" + roomCode;
+    try {
+      if (navigator.share) await navigator.share({ title: "홀덤", text: `홀덤 방 ${roomCode}`, url });
+      else { await navigator.clipboard.writeText(url); toast("초대 링크를 복사했어요."); }
+    } catch (e) {}
+  };
+}
+
+// 앉기: 닉네임 입력 패널을 해당 좌석 아래(로비 영역)에 띄움
+function openSit(i) {
+  const L = $("lobby");
+  L.innerHTML = `<div class="panel"><h2>좌석 ${i + 1}에 앉기</h2>
+    <div class="row"><label class="f" for="n-name">닉네임<input type="text" id="n-name" maxlength="10" value="${esc(myName)}"></label>
+    <button class="btn gold" id="n-ok">앉기</button><button class="btn ghost" id="n-cancel">취소</button></div></div>`;
+  const inp = $("n-name"); inp.focus(); inp.select();
+  const ok = () => { const n = inp.value.trim().slice(0, 10) || "플레이어"; myName = n; try { localStorage.setItem("holdem-name", n); } catch (e) {} doSit(i, n); };
+  $("n-ok").onclick = ok;
+  inp.onkeydown = e => { if (e.key === "Enter") ok(); };
+  $("n-cancel").onclick = render;
+  L.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+// 행동 타이머 바 (1초마다 너비만 갱신, 저장은 안 함)
+function tickTimer() {
+  const bar = document.querySelector("[data-timer]");
+  if (bar && S && S.hand) bar.style.width = Math.max(0, 100 - (now() - S.hand.turnAt) / TURN_MS * 100) + "%";
+}
+let lateShown = false;
+setInterval(() => {
+  tickTimer();
+  const late = S && S.hand && S.hand.toAct >= 0 && now() - S.hand.turnAt >= TURN_MS;
+  if (late !== lateShown) { lateShown = late; render(); }
+}, 1000);
+
+// 핸드가 끝나면 방장 폰이 9초 뒤 다음 핸드를 시작
+function scheduleAutoNext(s) {
+  const h = s.hand;
+  if (!isHost() || !h || h.street !== "done" || autoFor === h.no) return;
+  autoFor = h.no;
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => {
+    hostMutate(st => { if (!st.hand || st.hand.no !== h.no || st.hand.street !== "done") return false; startHand(st); });
+  }, AUTO_NEXT_MS);
+}
+
+/* ============================================================
+   ⑬ 시작 — 방장/친구 연결 (PeerJS: 폰끼리 직접 연결, 가입 필요 없음)
+   - 방장: "pubholdem-yoogr-1234" 이름으로 대기 → 친구 연결을 받아 상태를 보내줌
+   - 친구: 그 이름으로 접속 → 내 기기 번호를 알리고, 버튼 누른 것만 전송
+   ============================================================ */
+function loadHost() {
+  try { const v = JSON.parse(localStorage.getItem("holdem-host") || "null"); return v && v.code ? v : null; } catch (e) { return null; }
+}
+function setRoom(code) {
+  roomCode = code;
+  history.replaceState(null, "", location.pathname + "?room=" + code);   // 새로고침해도 같은 방으로
+}
+
+function startHost(code, saved) {
+  mode = "host"; setRoom(code);
+  S = saved || freshState();
+  render();
+  peer = new Peer(PEER_PREFIX + code);
+  peer.on("open", () => { linked = true; publish(); });
+  peer.on("connection", c => {
+    c.on("data", m => {
+      if (!m || typeof m !== "object") return;
+      if (m.t === "hello" && typeof m.id === "string") {
+        c.pid = m.id; conns.add(c);
+        c.send({ t: "state", s: viewFor(c.pid), now: Date.now() });
+        render();
+      } else if (m.t === "do" && c.pid) hostApply(m.name, m.args, c.pid);
+    });
+    c.on("close", () => { conns.delete(c); render(); });
+  });
+  // 서버(중계)와 끊겨도 이미 연결된 친구와는 계속 됨. 새로 들어올 친구를 위해 다시 붙음
+  peer.on("disconnected", () => { linked = false; render(); setTimeout(() => peer.reconnect(), 1500); });
+  peer.on("error", e => {
+    if (e.type === "unavailable-id") {
+      if (saved) toast("이 방이 다른 창에서 이미 열려 있어요. 그 창을 닫고 새로고침하세요.");
+      else { peer.destroy(); startHost(String(1000 + crypto.getRandomValues(new Uint32Array(1))[0] % 9000), null); }
+    } else if (e.type === "network" || e.type === "server-error") toast("인터넷 연결을 확인하세요.");
+  });
+}
+
+let retryT = null;
+function startGuest(code) {
+  mode = "guest"; setRoom(code);
+  render();
+  peer = new Peer();
+  peer.on("open", connectHost);
+  peer.on("disconnected", () => setTimeout(() => peer.reconnect(), 1500));
+  peer.on("error", e => {
+    if (e.type === "peer-unavailable") { toast(`방 ${code}을(를) 찾을 수 없어요. 방장 화면이 켜져 있는지 확인하세요.`); retry(); }
+  });
+}
+function connectHost() {
+  if (hostConn) hostConn.close();
+  const c = peer.connect(PEER_PREFIX + roomCode, { reliable: true });
+  hostConn = c;
+  c.on("open", () => { linked = true; c.send({ t: "hello", id: myId }); render(); });
+  c.on("data", m => {
+    if (!m || m.t !== "state") return;
+    skew = m.now - Date.now();
+    S = m.s;
+    render();
+  });
+  c.on("close", () => { if (hostConn !== c) return; linked = false; render(); retry(); });
+}
+// 연결이 끊기면 3초마다 다시 시도 (방장이 새로고침해도 자동으로 다시 붙음)
+function retry() {
+  clearTimeout(retryT);
+  retryT = setTimeout(() => { if (!linked && peer && !peer.destroyed) connectHost(); }, 3000);
+}
+
+try { myName = localStorage.getItem("holdem-name") || ""; } catch (e) {}
+// 내 자리 구분은 기기(브라우저)별 번호
+try { myId = localStorage.getItem("holdem-device") || ""; } catch (e) {}
+if (!myId) {
+  myId = "dev-" + crypto.getRandomValues(new Uint32Array(2)).join("");
+  try { localStorage.setItem("holdem-device", myId); } catch (e) {}
+}
+render();
+if (!window.Peer) toast("연결 도구를 불러오지 못했어요. 새로고침하세요.");
+else {
+  // 링크에 ?room=1234 가 있으면 바로 입장. 내가 만든 방이면 방장으로 다시 열기
+  const q = (new URLSearchParams(location.search).get("room") || "").replace(/\D/g, "");
+  const saved = loadHost();
+  if (q.length === 4) saved && saved.code === q ? startHost(q, saved.S) : startGuest(q);
+}
+</script>
+</body>
+</html>
