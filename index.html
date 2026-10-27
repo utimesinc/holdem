@@ -1003,18 +1003,24 @@ function bindSqueeze(el, no, k) {
   };
   el.addEventListener("pointerup", end);
   el.addEventListener("pointercancel", end);
+  // 끌지 않고 바로 까기 (오른쪽 아래 모서리부터 접혀 넘어감) — 엔터 키, "한 번에 까기" 버튼
+  el.peelNow = () => {
+    if (down) return;
+    const [W, H] = size();
+    S = [W, H]; P = [W - 1, H - 1]; openAll();
+  };
   el.addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
     e.preventDefault();
-    const [W, H] = size();
-    S = [W, H]; P = [W - 1, H - 1]; openAll();
+    el.peelNow();
   });
 }
 
 // 쪼기 화면 그리기 — 내용이 바뀔 때만 다시 만듦 (접는 도중에 끊기지 않게)
 function renderSqueeze(h, q, isOpen) {
   const box = $("squeeze");
-  const can = !!q && !q.folded && h.street !== "done";
+  // 올인으로 보드가 자동으로 다 깔려서 핸드가 바로 끝나도, 아직 내 카드를 못 봤으면 쪼기 화면을 유지
+  const can = !!q && !q.folded && (h.street !== "done" || !(isOpen(0) && isOpen(1)));
   if (!can) sqOpen = false;
   // 새 핸드에 카드를 받으면 한 번 자동으로 띄움
   if (can && sqAutoFor !== h.no && !(isOpen(0) && isOpen(1))) { sqAutoFor = h.no; sqOpen = true; }
@@ -1032,10 +1038,16 @@ function renderSqueeze(h, q, isOpen) {
              <div class="sq-back"></div>
              <div class="sq-flapwrap" style="display:none"><div class="sq-flap">${faceBig(c)}<div class="sq-shade"></div></div></div>
            </div>`).join("")}</div>
-      <button class="btn" id="sq-close">테이블 보기</button>
+      <div class="row">
+        ${both ? "" : `<button class="btn gold" id="sq-all">한 번에 까기</button>`}
+        <button class="btn" id="sq-close">테이블 보기</button>
+      </div>
     </div>`;
-  box.querySelectorAll(".sq-card[data-k]").forEach(el => bindSqueeze(el, h.no, +el.dataset.k));
+  const cards = [...box.querySelectorAll(".sq-card[data-k]")];
+  cards.forEach(el => bindSqueeze(el, h.no, +el.dataset.k));
   $("sq-close").onclick = () => { sqOpen = false; render(); };
+  // 한 번에 까기: 안 깐 카드를 모두 동시에 넘김
+  if (!both) $("sq-all").onclick = e => { e.currentTarget.disabled = true; cards.forEach(el => el.peelNow()); };
   // 두 장 다 열면 잠깐 보여준 뒤 자동으로 닫힘
   clearTimeout(sqCloseT);
   if (both) { const no = h.no; sqCloseT = setTimeout(() => { if (S && S.hand && S.hand.no === no) { sqOpen = false; render(); } }, 1800); }
@@ -1194,7 +1206,7 @@ function renderDock(s, me, hide) {
     const cardsH = q
       ? q.cards.map((c, k) => cardHTML(isOpen(k) ? c : "back", "lg" + (q.folded ? " dim" : ""))).join("")
       : cardHTML(null, "lg") + cardHTML(null, "lg");
-    const tap = q && !q.folded && h.street !== "done";
+    const tap = q && !q.folded && (h.street !== "done" || !allOpen);
     $("mine").innerHTML = `<div class="cards ${tap ? "tap" : ""}" ${tap ? `role="button" tabindex="0" aria-label="카드 크게 보기"` : ""}>${cardsH}</div>
       <div class="hand ${q && !allOpen ? "" : lv}">${q && !allOpen && !q.folded ? "눌러서 카드 쪼기" : label}</div>`;
     // 아래 작은 카드를 누르면 쪼기 화면을 다시 띄움
