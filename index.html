@@ -949,7 +949,7 @@ function bindSqueeze(el, no, k) {
   const end = () => {
     if (!down) return;
     down = null;
-    if (foldFrac > 0.45) openAll();                            // 절반 가까이 젖혔으면 완전히 뒤집힘
+    if (foldFrac > 0.3) openAll();                             // 30% 넘게 젖혔으면 완전히 뒤집힘
     else animate(S, 220, () => { S = null; draw(); });          // 덜 젖혔으면 종이처럼 다시 펴짐
   };
   el.addEventListener("pointerup", end);
