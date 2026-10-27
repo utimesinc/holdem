@@ -291,6 +291,8 @@ let resetArm = false;
 let autoTimer = null, autoFor = 0;
 let mode = null, roomCode = "";              // mode: "host"(방장) | "guest"(친구) | null(아직 입장 전)
 let peer = null, hostConn = null, linked = false, skew = 0;
+let lastMsg = 0;                             // 친구: 방장에게서 마지막으로 뭔가 받은 시각 (끊김 감지용)
+const PING_MS = 3000, STALE_MS = 10000;      // 방장은 3초마다 신호, 친구는 10초간 아무것도 못 받으면 다시 연결
 const conns = new Set();                     // 방장: 연결된 친구들
 const isHost = () => mode === "host";
 const now = () => Date.now() + skew;         // 방장 폰 시계 기준 시간 (타이머가 폰마다 어긋나지 않게)
@@ -1173,7 +1175,7 @@ function setRoom(code) {
 function startHost(code, saved) {
   mode = "host"; setRoom(code);
   S = saved || freshState();
-  render();
+  render(); keepAwake();
   peer = new Peer(PEER_PREFIX + code);
   peer.on("open", () => { linked = true; publish(); });
   peer.on("connection", c => {
@@ -1188,19 +1190,25 @@ function startHost(code, saved) {
     c.on("close", () => { conns.delete(c); render(); });
   });
   // 서버(중계)와 끊겨도 이미 연결된 친구와는 계속 됨. 새로 들어올 친구를 위해 다시 붙음
-  peer.on("disconnected", () => { linked = false; render(); setTimeout(() => peer.reconnect(), 1500); });
+  peer.on("disconnected", () => { linked = false; render(); setTimeout(() => { if (!peer.destroyed) peer.reconnect(); }, 1500); });
   peer.on("error", e => {
     if (e.type === "unavailable-id") {
-      if (saved) toast("이 방이 다른 창에서 이미 열려 있어요. 그 창을 닫고 새로고침하세요.");
-      else { peer.destroy(); startHost(String(1000 + crypto.getRandomValues(new Uint32Array(1))[0] % 9000), null); }
+      peer.destroy();
+      // 새로고침 직후엔 서버가 예전 연결을 아직 붙잡고 있을 수 있음 → 3초마다 다시 시도
+      if (saved) { toast("방을 다시 여는 중이에요…"); setTimeout(() => startHost(code, S), 3000); }
+      else startHost(String(1000 + crypto.getRandomValues(new Uint32Array(1))[0] % 9000), null);
     } else if (e.type === "network" || e.type === "server-error") toast("인터넷 연결을 확인하세요.");
   });
 }
+// 방장: 3초마다 친구들에게 "살아 있음" 신호 (친구가 끊김을 알아챌 수 있게)
+setInterval(() => {
+  if (isHost()) conns.forEach(c => { if (c.open) c.send({ t: "ping", now: Date.now() }); });
+}, PING_MS);
 
 let retryT = null;
 function startGuest(code) {
   mode = "guest"; setRoom(code);
-  render();
+  render(); keepAwake();
   peer = new Peer();
   peer.on("open", connectHost);
   peer.on("disconnected", () => setTimeout(() => peer.reconnect(), 1500));
@@ -1212,9 +1220,12 @@ function connectHost() {
   if (hostConn) hostConn.close();
   const c = peer.connect(PEER_PREFIX + roomCode, { reliable: true });
   hostConn = c;
-  c.on("open", () => { linked = true; c.send({ t: "hello", id: myId }); render(); });
+  c.on("open", () => { linked = true; lastMsg = Date.now(); c.send({ t: "hello", id: myId }); render(); });
   c.on("data", m => {
-    if (!m || m.t !== "state") return;
+    if (!m || hostConn !== c) return;
+    lastMsg = Date.now();
+    if (m.t === "ping") { skew = m.now - Date.now(); return; }
+    if (m.t !== "state") return;
     skew = m.now - Date.now();
     S = m.s;
     render();
@@ -1226,6 +1237,27 @@ function retry() {
   clearTimeout(retryT);
   retryT = setTimeout(() => { if (!linked && peer && !peer.destroyed) connectHost(); }, 3000);
 }
+// 폰에서는 연결이 "닫힘" 신호 없이 조용히 죽기도 함 → 방장 신호가 10초 넘게 없으면 끊긴 걸로 보고 다시 연결
+setInterval(() => {
+  if (mode !== "guest" || !linked || Date.now() - lastMsg < STALE_MS) return;
+  linked = false; render();
+  if (peer.disconnected && !peer.destroyed) peer.reconnect();
+  connectHost();
+}, 2000);
+
+// 화면 꺼짐 방지: 방에 들어가 있는 동안 폰 화면이 자동으로 꺼지지 않게 (특히 방장 폰이 꺼지면 게임이 멈춤)
+let wakeLock = null;
+async function keepAwake() {
+  if (!mode || !navigator.wakeLock || document.visibilityState !== "visible") return;
+  try { if (!wakeLock || wakeLock.released) wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+// 다른 앱(카톡 등)에 갔다가 돌아오면: 화면 꺼짐 방지 다시 켜고, 끊겼으면 바로 다시 연결
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || !peer || peer.destroyed) return;
+  keepAwake();
+  if (peer.disconnected) peer.reconnect();
+  if (mode === "guest" && (!linked || Date.now() - lastMsg > PING_MS * 2)) { linked = false; render(); connectHost(); }
+});
 
 try { myName = localStorage.getItem("holdem-name") || ""; } catch (e) {}
 // 내 자리 구분은 기기(브라우저)별 번호
