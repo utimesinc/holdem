@@ -961,16 +961,21 @@ function bindSqueeze(el, no, k) {
     wrap.style.display = "";
   }
   // P를 목표 지점까지 부드럽게 옮김
+  let safety = 0;
   function animate(to, ms, done) {
-    cancelAnimationFrame(raf);
+    cancelAnimationFrame(raf); clearTimeout(safety);
     const from = P.slice(), t0 = performance.now();
-    const step = now => {
-      const t = Math.min(1, (now - t0) / ms), e = 1 - (1 - t) ** 3;
+    let fin = false;
+    const finish = () => { if (fin) return; fin = true; cancelAnimationFrame(raf); clearTimeout(safety); P = to.slice(); draw(); if (done) done(); };
+    const step = () => {
+      const t = Math.min(1, (performance.now() - t0) / ms), e = 1 - (1 - t) ** 3;
       P = [from[0] + (to[0] - from[0]) * e, from[1] + (to[1] - from[1]) * e];
       draw();
-      if (t < 1) raf = requestAnimationFrame(step); else if (done) done();
+      if (t < 1) raf = requestAnimationFrame(step); else finish();
     };
     raf = requestAnimationFrame(step);
+    // 화면 갱신이 멈춘 상태(백그라운드 탭 등)에서도 반드시 끝나도록 시간이 지나면 강제로 마무리
+    safety = setTimeout(finish, ms + 150);
   }
   function openAll() {
     const [W, H] = size(), d = Math.hypot(P[0] - S[0], P[1] - S[1]) || 1;
@@ -978,7 +983,7 @@ function bindSqueeze(el, no, k) {
     animate([S[0] + (P[0] - S[0]) / d * far, S[1] + (P[1] - S[1]) / d * far], 320, () => { peeled[no + "-" + k] = true; render(); });
   }
   el.addEventListener("pointerdown", e => {
-    cancelAnimationFrame(raf);
+    cancelAnimationFrame(raf); clearTimeout(safety);
     const r = el.getBoundingClientRect(), [W, H] = size();
     const x = e.clientX - r.left, y = e.clientY - r.top;
     // 잡은 곳을 가장 가까운 모서리/끝으로 맞춤 → 항상 카드 가장자리부터 접힘
