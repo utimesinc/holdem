@@ -29,22 +29,11 @@
   color-scheme: dark;
 }
 html, body { height: 100%; }
-html { background: #fff; }   /* 겜 몰래하기로 흐리게 하면 비쳐 보이는 바탕 */
 body {
   margin: 0;
+  background: radial-gradient(ellipse at 50% 30%, #13221c 0%, var(--room) 70%);
   color: var(--text); font-family: var(--f-body); font-size: 14px;
 }
-/* 배경과 화면 전체를 --op 만큼 흐리게 (겜 몰래하기 버튼만 빼고) */
-body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: radial-gradient(ellipse at 50% 30%, #13221c 0%, var(--room) 70%); opacity: var(--op, 1); }
-body > *:not(.stealth) { opacity: var(--op, 1); }
-.stealth { position: fixed; top: 8px; right: max(16px, env(safe-area-inset-right, 0px)); z-index: 30; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-.stealth-btn { padding: 5px 10px; border-radius: 999px; background: var(--rail); border: 1px solid var(--brass-dim); color: var(--brass); font-size: 12px; font-weight: 700; cursor: pointer; opacity: max(var(--op, 1), .3); }
-.stealth-btn:hover, .stealth-btn[aria-expanded=true] { opacity: 1; }
-.stealth-panel { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: rgba(20,15,12,.95); border: 1px solid #3d3027; color: var(--text); font-size: 13px; }
-.stealth-panel[hidden] { display: none; }
-.stealth-panel input { width: 140px; accent-color: var(--brass); }
-.stealth-panel b { font-family: var(--f-num); min-width: 3.2em; text-align: right; }
-header { padding-right: 100px; }   /* 오른쪽 위 버튼과 안 겹치게 */
 .wrap {
   max-width: 760px; margin: 0 auto;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
@@ -376,10 +365,6 @@ input.code { width: 120px; font: 600 20px var(--f-num); letter-spacing: .2em; te
   <form class="chat-form" id="chat-form"><input type="text" id="chat-in" maxlength="120" placeholder="메시지 입력" autocomplete="off" aria-label="메시지"><button class="btn gold">보내기</button></form>
 </div>
 <div class="toast" id="toast" hidden></div>
-<div class="stealth">
-  <button class="stealth-btn" id="stealth-btn" aria-expanded="false">겜 몰래하기</button>
-  <div class="stealth-panel" id="stealth-panel" hidden><span>불투명도</span><input type="range" id="stealth-op" min="5" max="100" step="5" value="100" aria-label="불투명도"><b id="stealth-val">100%</b></div>
-</div>
 
 <script>
 /* ============================================================
@@ -1467,20 +1452,6 @@ function renderChat(s) {
     : `<div class="muted">게임하면서 친구들과 이야기해 보세요.</div>`;
   L.scrollTop = L.scrollHeight;
 }
-// 겜 몰래하기: 화면 전체 불투명도 조절 (이 기기에만 기억)
-function setOpacity(v) {
-  document.documentElement.style.setProperty("--op", v / 100);
-  $("stealth-op").value = v; $("stealth-val").textContent = v + "%";
-  try { localStorage.setItem("holdem-op", v); } catch (e) {}
-}
-$("stealth-btn").onclick = () => {
-  const open = $("stealth-panel").hidden;
-  $("stealth-panel").hidden = !open;
-  $("stealth-btn").setAttribute("aria-expanded", open);
-};
-$("stealth-op").oninput = e => setOpacity(+e.target.value);
-try { const v = +localStorage.getItem("holdem-op"); if (v >= 5 && v <= 100) setOpacity(v); } catch (e) {}
-
 $("chat-fab").onclick = () => { chatOpen = true; render(); $("chat-in").focus(); };
 $("chat-x").onclick = () => { chatOpen = false; render(); };
 $("chat").onkeydown = e => { if (e.key === "Escape") { chatOpen = false; render(); } };
