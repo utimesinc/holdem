@@ -85,19 +85,74 @@ h1 { font-family: var(--f-sign); font-weight: 400; font-size: 26px; margin: 0; l
 }
 @keyframes flipIn { 0% { transform: scaleX(1); } 50% { transform: scaleX(0); } 100% { transform: scaleX(1); } }
 @keyframes hideBack { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
-/* 내 카드 직접 까기: 뒷면 덮개(cover)를 끌어내면 아래 앞면이 보임 */
 .card.lg { position: relative; }
 .card .ix { position: absolute; display: flex; flex-direction: column; align-items: center; font-size: 13px; line-height: .9; }
 .card .ix.tl { top: 4px; left: 5px; }
 .card .ix.br { bottom: 4px; right: 5px; transform: rotate(180deg); }
-.peel { overflow: hidden; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
-.peel:active { cursor: grabbing; }
-.peel .cover {
-  position: absolute; inset: 0; border-radius: inherit; box-sizing: border-box;
-  background: repeating-linear-gradient(45deg, #7d1f1c 0 4px, #8f2a25 4px 8px); border: 2px solid var(--ivory);
-  box-shadow: -3px -3px 10px rgba(0,0,0,.5); transition: transform .28s ease, opacity .28s ease;
+.mine .cards.tap { cursor: pointer; }
+/* 쪼기 화면: 내 카드 2장을 크게 띄우고, 잡은 끝부분만 종이처럼 접어 올려서 앞면을 봄
+   레이어: 뒷면(접힌 부분은 잘라냄) + 접힌 날개(앞면이 보이는 쪽, 접는 선 기준으로 뒤집어 그림) */
+.squeeze {
+  position: fixed; left: 0; right: 0; top: 0; bottom: var(--dock-h, 200px); z-index: 4;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(5,10,8,.84); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
 }
-.peel .cover.drag { transition: none; }
+.squeeze[hidden] { display: none; }
+.sq-in { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.sq-hint { font-size: 13px; color: var(--muted); text-align: center; }
+.sq-cards { display: flex; gap: clamp(14px, 4vw, 36px); }
+.sq-card {
+  --cw: min(40vw, 230px, calc((100vh - var(--dock-h, 200px) - 150px) / 1.4));
+  position: relative; width: var(--cw); height: calc(var(--cw) * 1.4); font-size: calc(var(--cw) / 7);
+  touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab;
+  border-radius: 7% / 5%; box-shadow: inset 0 0 0 1px rgba(246,241,227,.12);   /* 들어 올리면 보이는 바닥 자리 */
+}
+.sq-card:active { cursor: grabbing; }
+.sq-card.open { cursor: default; }
+.sq-face, .sq-back, .sq-flap { position: absolute; inset: 0; border-radius: 7% / 5%; box-sizing: border-box; }
+.sq-face {
+  background: var(--ivory); color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: var(--f-num); font-weight: 700; line-height: .95; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+}
+.sq-face.red { color: var(--red); }
+.sq-face .r { font-size: 2.4em; }
+.sq-face .s { font-size: 2em; }
+.sq-face .ix { position: absolute; display: flex; flex-direction: column; align-items: center; font-size: .78em; line-height: .9; }
+.sq-face .ix.tl { top: .35em; left: .4em; }
+.sq-face .ix.tr { top: .35em; right: .4em; }
+.sq-face .ix.bl { bottom: .35em; left: .4em; transform: rotate(180deg); }
+.sq-face .ix.br { bottom: .35em; right: .4em; transform: rotate(180deg); }
+.sq-back {
+  background: repeating-linear-gradient(45deg, #7d1f1c 0 6px, #8f2a25 6px 12px);
+  border: calc(var(--cw) * .045) solid var(--ivory); box-shadow: 0 6px 18px rgba(0,0,0,.45);
+}
+.sq-flapwrap { position: absolute; inset: 0; pointer-events: none; filter: drop-shadow(0 4px 8px rgba(0,0,0,.55)); }
+.sq-flap { transform-origin: 0 0; }
+.sq-flap .sq-face { transform: scaleX(-1); box-shadow: none; }   /* 엎어진 카드의 밑면 = 좌우가 뒤집힌 앞면 */
+.sq-shade { position: absolute; inset: 0; border-radius: inherit; }  /* 접힌 선 근처를 어둡게 → 종이가 휘어진 느낌 */
+/* 대화창: 오른쪽 아래 버튼(안 읽은 개수 표시) → 누르면 행동 버튼 위로 대화창이 열림 */
+.chat-fab, .chat { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(var(--dock-h, 200px) + 12px); z-index: 6; }
+.chat-fab {
+  border-radius: 999px; padding: 10px 16px; background: var(--rail); border: 1px solid var(--brass-dim);
+  color: var(--brass); font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 16px rgba(0,0,0,.45);
+}
+.chat-fab .badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: var(--danger); color: #fff; font: 700 12px/16px var(--f-num); }
+.chat-fab[hidden], .chat[hidden], .chat-fab .badge[hidden] { display: none; }
+.chat {
+  width: min(360px, calc(100vw - 32px)); height: min(52vh, 400px); display: flex; flex-direction: column;
+  background: rgba(20,15,12,.97); border: 1px solid #3d3027; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.55);
+}
+.chat-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 8px 8px 14px; border-bottom: 1px solid #33271f; }
+.chat-head b { font-family: var(--f-sign); font-weight: 400; color: var(--brass); font-size: 16px; }
+.chat-head .btn { padding: 6px 10px; font-size: 13px; }
+.chat-list { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.msg { max-width: 85%; align-self: flex-start; background: #2a1f18; padding: 6px 10px; border-radius: 10px; overflow-wrap: anywhere; }
+.msg small { display: block; font-size: 11px; color: var(--muted); }
+.msg.me { align-self: flex-end; background: var(--brass); color: var(--ink); }
+.msg.me small { color: rgba(27,26,23,.65); }
+.chat-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #33271f; }
+.chat-form input[type=text] { flex: 1; width: auto; min-width: 0; font-size: 16px; }   /* 16px: 아이폰에서 입력할 때 화면 확대 방지 */
+.chat-form .btn { padding: 8px 14px; }
 /* 승리 표시: 내가 이기면 테이블 가운데 큰 WIN 도장, 이긴 사람 좌석에는 WIN 배지 */
 .bigwin {
   position: absolute; left: 50%; top: 48%; z-index: 4; pointer-events: none; text-align: center; line-height: 1.05;
@@ -244,7 +299,7 @@ input.code { width: 120px; font: 600 20px var(--f-num); letter-spacing: .2em; te
   background: var(--ivory); color: var(--ink); padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 20;
   max-width: calc(100% - 32px);
 }
-@media (prefers-reduced-motion: reduce) { .card.new, .card.flip { animation: none; } .card.flip::after { display: none; } .bigwin { animation: fadeWin .7s ease 3.2s forwards; } }
+@media (prefers-reduced-motion: reduce) { .card.new, .card.flip { animation: none; } .squeeze { -webkit-backdrop-filter: none; backdrop-filter: none; } .card.flip::after { display: none; } .bigwin { animation: fadeWin .7s ease 3.2s forwards; } }
 </style>
 </head>
 <body>
@@ -270,6 +325,13 @@ input.code { width: 120px; font: 600 20px var(--f-num); letter-spacing: .2em; te
   </div>
 </div>
 <div class="dock"><div class="dock-in"><div class="sheet" id="sheet"></div><div class="dock-row"><div class="mine" id="mine"></div><div class="acts" id="acts"></div></div></div></div>
+<div class="squeeze" id="squeeze" hidden></div>
+<button class="chat-fab" id="chat-fab" hidden>대화<span class="badge" id="chat-badge" hidden></span></button>
+<div class="chat" id="chat" hidden role="dialog" aria-label="대화">
+  <div class="chat-head"><b>대화</b><button class="btn ghost" id="chat-x">닫기</button></div>
+  <div class="chat-list" id="chat-list" aria-live="polite"></div>
+  <form class="chat-form" id="chat-form"><input type="text" id="chat-in" maxlength="120" placeholder="메시지 입력" autocomplete="off" aria-label="메시지"><button class="btn gold">보내기</button></form>
+</div>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -635,7 +697,15 @@ const ACTIONS = {
   reset(s, id) {
     if (id !== myId) return false;                                // 리셋은 방장만
     const seats = s.seats.map(x => x && !x.leave ? { ...x, stack: s.cfg.stack, away: false } : null);
-    Object.assign(s, freshState(s.cfg), { seats });
+    Object.assign(s, freshState(s.cfg), { seats, chat: s.chat });   // 칩만 리셋, 대화는 남김
+  },
+  // 대화: 앉아 있으면 자리 이름, 아니면 보낸 사람이 정한 이름으로. 최근 50개만 보관
+  chat(s, id, { text, name }) {
+    text = String(text || "").trim().slice(0, 120);
+    if (!text) return false;
+    const i = seatOf(s, id);
+    const who = i >= 0 ? s.seats[i].name : (String(name || "").trim().slice(0, 10) || "관전");
+    s.chat = (s.chat || []).concat({ id, name: who, text, at: Date.now() }).slice(-50);
   },
   addBot(s, id) {
     const i = s.seats.findIndex(x => !x);
@@ -790,39 +860,136 @@ function renderBoard(h) {
   }
 }
 
-// 내 카드 까기
+// 내 카드 쪼기 — 큰 카드 2장을 띄우고, 잡은 끝부분을 종이처럼 접어 올림
 let peeled = {}, mineSig = "", actsSig = "";
-function peelHTML(c, k, folded) {
-  const red = c[1] === "h" || c[1] === "d";
-  return `<div class="card lg peel ${red ? "red" : ""} ${folded ? "dim" : ""}" data-k="${k}" tabindex="0" role="button" aria-label="내 카드 ${k + 1} 까기">${faceInner(c, true)}<div class="cover"></div></div>`;
+let sqOpen = false, sqAutoFor = 0, sqSig = "", sqCloseT = null;
+const isRed = c => c[1] === "h" || c[1] === "d";
+// 큰 카드 앞면: 네 모서리 모두 숫자 (어느 쪽을 쪼아도 보이게)
+function faceBig(c) {
+  const r = c[0] === "T" ? "10" : c[0], s = SUIT_SYM[c[1]];
+  const ix = ["tl", "tr", "bl", "br"].map(p => `<span class="ix ${p}">${r}<br>${s}</span>`).join("");
+  return `<div class="sq-face ${isRed(c) ? "red" : ""}">${ix}<span class="r">${r}</span><span class="s">${s}</span></div>`;
 }
-function bindPeel(el, no) {
-  const cover = el.querySelector(".cover");
-  let sx = 0, sy = 0, dx = 0, dy = 0, on = false;
-  const open = () => {
-    cover.style.opacity = "0";
-    setTimeout(() => { peeled[no + "-" + el.dataset.k] = true; render(); }, 260);
-  };
+
+// 다각형을 반평면 f(점) >= 0 으로 자르기 (서덜랜드-호지먼)
+function clipPoly(pts, f) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length], fa = f(a), fb = f(b);
+    if (fa >= 0) out.push(a);
+    if ((fa >= 0) !== (fb >= 0)) { const t = fa / (fa - fb); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+  }
+  return out;
+}
+const polyCSS = pts => pts.length < 3 ? "polygon(0 0, 0 0, 0 0)" : `polygon(${pts.map(p => `${p[0]}px ${p[1]}px`).join(", ")})`;
+const polyArea = pts => Math.abs(pts.reduce((t, p, i) => { const q = pts[(i + 1) % pts.length]; return t + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
+
+// 접기 원리: 잡은 점 S가 손가락 위치 P로 옮겨지도록, S–P의 수직이등분선을 접는 선으로 삼음
+//   접는 선의 S 쪽 → 뒷면에서 잘라내고, 그 부분을 선 기준으로 뒤집어(날개) 앞면을 보여줌
+function bindSqueeze(el, no, k) {
+  const back = el.querySelector(".sq-back"), wrap = el.querySelector(".sq-flapwrap");
+  const flap = el.querySelector(".sq-flap"), shade = el.querySelector(".sq-shade");
+  let S = null, P = null, down = null, raf = 0, foldFrac = 0;
+  const size = () => [el.clientWidth, el.clientHeight];
+  function draw() {
+    const [W, H] = size();
+    const dx = S ? P[0] - S[0] : 0, dy = S ? P[1] - S[1] : 0, len = Math.hypot(dx, dy);
+    if (len < 1) { back.style.clipPath = ""; wrap.style.display = "none"; foldFrac = 0; return; }
+    const nx = dx / len, ny = dy / len, mx = (S[0] + P[0]) / 2, my = (S[1] + P[1]) / 2;
+    const side = p => (p[0] - mx) * nx + (p[1] - my) * ny;     // 0 이상: 그대로 남는 쪽
+    const rect = [[0, 0], [W, 0], [W, H], [0, H]];
+    const fold = clipPoly(rect, p => -side(p));
+    foldFrac = polyArea(fold) / (W * H);
+    back.style.clipPath = polyCSS(clipPoly(rect, side));
+    flap.style.clipPath = polyCSS(fold);
+    // 접는 선 기준 거울 뒤집기 (X' = X − 2((X−M)·n)n)
+    const m = 2 * (mx * nx + my * ny);
+    flap.style.transform = `matrix(${1 - 2 * nx * nx}, ${-2 * nx * ny}, ${-2 * nx * ny}, ${1 - 2 * ny * ny}, ${m * nx}, ${m * ny})`;
+    // 접힌 선 쪽이 가장 어둡고 끝으로 갈수록 밝아지는 그림자 (선과 수직 방향 그라데이션)
+    const ux = -nx, uy = -ny, ang = Math.atan2(ux, -uy), L = Math.abs(W * ux) + Math.abs(H * uy);
+    const t0 = (mx - W / 2) * ux + (my - H / 2) * uy + L / 2;
+    shade.style.background = `linear-gradient(${ang}rad, rgba(0,0,0,.32) ${t0}px, rgba(0,0,0,.08) ${t0 + W * .15}px, rgba(255,255,255,.12) ${t0 + W * .45}px, rgba(0,0,0,0) ${t0 + W}px)`;
+    wrap.style.display = "";
+  }
+  // P를 목표 지점까지 부드럽게 옮김
+  function animate(to, ms, done) {
+    cancelAnimationFrame(raf);
+    const from = P.slice(), t0 = performance.now();
+    const step = now => {
+      const t = Math.min(1, (now - t0) / ms), e = 1 - (1 - t) ** 3;
+      P = [from[0] + (to[0] - from[0]) * e, from[1] + (to[1] - from[1]) * e];
+      draw();
+      if (t < 1) raf = requestAnimationFrame(step); else if (done) done();
+    };
+    raf = requestAnimationFrame(step);
+  }
+  function openAll() {
+    const [W, H] = size(), d = Math.hypot(P[0] - S[0], P[1] - S[1]) || 1;
+    const far = 2.2 * Math.hypot(W, H);
+    animate([S[0] + (P[0] - S[0]) / d * far, S[1] + (P[1] - S[1]) / d * far], 320, () => { peeled[no + "-" + k] = true; render(); });
+  }
   el.addEventListener("pointerdown", e => {
-    on = true; sx = e.clientX; sy = e.clientY; dx = dy = 0;
-    el.setPointerCapture(e.pointerId); cover.classList.add("drag");
+    cancelAnimationFrame(raf);
+    const r = el.getBoundingClientRect(), [W, H] = size();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    // 잡은 곳을 가장 가까운 모서리/끝으로 맞춤 → 항상 카드 가장자리부터 접힘
+    let sx = x < W * .25 ? 0 : x > W * .75 ? W : x, sy = y < H * .25 ? 0 : y > H * .75 ? H : y;
+    if (sx === x && sy === y) {
+      const dmin = Math.min(x, W - x, y, H - y);
+      if (dmin === x) sx = 0; else if (dmin === W - x) sx = W; else if (dmin === y) sy = 0; else sy = H;
+    }
+    S = [sx, sy]; P = S.slice(); down = [e.clientX, e.clientY];
+    el.setPointerCapture(e.pointerId);
   });
   el.addEventListener("pointermove", e => {
-    if (!on) return;
-    dx = e.clientX - sx; dy = e.clientY - sy;
-    cover.style.transform = `translate(${dx}px, ${dy}px) rotate(${dx * 0.15}deg)`;
+    if (!down) return;
+    P = [S[0] + e.clientX - down[0], S[1] + e.clientY - down[1]];
+    draw();
   });
   const end = () => {
-    if (!on) return;
-    on = false; cover.classList.remove("drag");
-    if (Math.hypot(dx, dy) > el.offsetHeight * 0.6) {         // 카드 높이의 60% 넘게 끌면 완전히 열림
-      cover.style.transform = `translate(${dx * 3}px, ${dy * 3}px) rotate(${dx * 0.4}deg)`;
-      open();
-    } else cover.style.transform = "";                         // 덜 끌면 다시 덮임
+    if (!down) return;
+    down = null;
+    if (foldFrac > 0.45) openAll();                            // 절반 가까이 젖혔으면 완전히 뒤집힘
+    else animate(S, 220, () => { S = null; draw(); });          // 덜 젖혔으면 종이처럼 다시 펴짐
   };
   el.addEventListener("pointerup", end);
   el.addEventListener("pointercancel", end);
-  el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+  el.addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    const [W, H] = size();
+    S = [W, H]; P = [W - 1, H - 1]; openAll();
+  });
+}
+
+// 쪼기 화면 그리기 — 내용이 바뀔 때만 다시 만듦 (접는 도중에 끊기지 않게)
+function renderSqueeze(h, q, isOpen) {
+  const box = $("squeeze");
+  const can = !!q && !q.folded && h.street !== "done";
+  if (!can) sqOpen = false;
+  // 새 핸드에 카드를 받으면 한 번 자동으로 띄움
+  if (can && sqAutoFor !== h.no && !(isOpen(0) && isOpen(1))) { sqAutoFor = h.no; sqOpen = true; }
+  const sig = sqOpen ? [h.no, q.cards.join(), isOpen(0), isOpen(1)].join("|") : "";
+  if (sig === sqSig) return;
+  sqSig = sig;
+  box.hidden = !sqOpen;
+  if (!sqOpen) { box.innerHTML = ""; return; }
+  const both = isOpen(0) && isOpen(1);
+  box.innerHTML = `<div class="sq-in">
+      <div class="sq-hint">${both ? "" : "카드 끝이나 모서리를 잡고 종이처럼 끌어 올려 보세요"}</div>
+      <div class="sq-cards">${q.cards.map((c, k) => isOpen(k)
+        ? `<div class="sq-card open">${faceBig(c)}</div>`
+        : `<div class="sq-card" data-k="${k}" tabindex="0" role="button" aria-label="내 카드 ${k + 1} 쪼기">
+             <div class="sq-back"></div>
+             <div class="sq-flapwrap" style="display:none"><div class="sq-flap">${faceBig(c)}<div class="sq-shade"></div></div></div>
+           </div>`).join("")}</div>
+      <button class="btn" id="sq-close">테이블 보기</button>
+    </div>`;
+  box.querySelectorAll(".sq-card[data-k]").forEach(el => bindSqueeze(el, h.no, +el.dataset.k));
+  $("sq-close").onclick = () => { sqOpen = false; render(); };
+  // 두 장 다 열면 잠깐 보여준 뒤 자동으로 닫힘
+  clearTimeout(sqCloseT);
+  if (both) { const no = h.no; sqCloseT = setTimeout(() => { if (S && S.hand && S.hand.no === no) { sqOpen = false; render(); } }, 1800); }
 }
 let toastT;
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 3500); }
@@ -922,8 +1089,11 @@ function render() {
   }
 
   renderDock(s, me, hide);
+  // 쪼기 화면이 아래 행동 버튼을 가리지 않도록 버튼 영역 높이를 알려줌
+  document.documentElement.style.setProperty("--dock-h", document.querySelector(".dock").offsetHeight + "px");
   seenCards = nextSeen;
   renderRoom();
+  renderChat(s);
   renderLobby(s, me);
   $("log").innerHTML = h && h.log.length ? h.log.slice().reverse().map(l => `<div>${esc(l)}</div>`).join("") : `<div>아직 진행한 핸드가 없어요.</div>`;
   tickTimer();
@@ -943,15 +1113,20 @@ function renderDock(s, me, hide) {
     if (h.board.length >= 3) label = bestHand(q.cards.concat(h.board)).name;
     else if (q.cards[0][0] === q.cards[1][0]) label = "포켓 페어";
   }
-  const sig = q ? [h.no, q.cards.join(), q.folded, isOpen(0), isOpen(1), label].join("|") : "none";
+  const sig = q ? [h.no, q.cards.join(), q.folded, isOpen(0), isOpen(1), label, h.street === "done"].join("|") : "none";
   if (sig !== mineSig) {
     mineSig = sig;
     const cardsH = q
-      ? q.cards.map((c, k) => isOpen(k) ? cardHTML(c, "lg" + (q.folded ? " dim" : "")) : peelHTML(c, k, q.folded)).join("")
+      ? q.cards.map((c, k) => cardHTML(isOpen(k) ? c : "back", "lg" + (q.folded ? " dim" : ""))).join("")
       : cardHTML(null, "lg") + cardHTML(null, "lg");
-    $("mine").innerHTML = `<div class="cards">${cardsH}</div><div class="hand">${q && !allOpen ? "카드를 끌어서 까보세요" : label}</div>`;
-    $("mine").querySelectorAll(".peel").forEach(el => bindPeel(el, h.no));
+    const tap = q && !q.folded && h.street !== "done";
+    $("mine").innerHTML = `<div class="cards ${tap ? "tap" : ""}" ${tap ? `role="button" tabindex="0" aria-label="카드 크게 보기"` : ""}>${cardsH}</div>
+      <div class="hand">${q && !allOpen && !q.folded ? "눌러서 카드 쪼기" : label}</div>`;
+    // 아래 작은 카드를 누르면 쪼기 화면을 다시 띄움
+    const c = $("mine").querySelector(".cards.tap");
+    if (c) c.onclick = c.onkeydown = e => { if (e.type === "keydown" && e.key !== "Enter") return; sqOpen = true; render(); };
   }
+  renderSqueeze(h, q, isOpen);
 
   const fmt = n => n.toLocaleString();
   let acts = "", sheet = "", t = null;
@@ -1121,6 +1296,36 @@ function renderRoom() {
     } catch (e) {}
   };
 }
+
+// 대화창 — 목록은 새 메시지가 왔을 때만 다시 그림 (입력 중인 글자는 건드리지 않음)
+let chatOpen = false, chatSig = "", chatSeen = 0;
+function renderChat(s) {
+  const list = s.chat || [], last = list[list.length - 1];
+  $("chat-fab").hidden = !mode || !S || chatOpen;
+  $("chat").hidden = !chatOpen;
+  if (chatOpen && last) chatSeen = last.at;
+  const unread = list.filter(m => m.at > chatSeen && m.id !== myId).length;
+  $("chat-badge").hidden = !unread;
+  $("chat-badge").textContent = unread > 9 ? "9+" : unread;
+  const sig = list.length + ":" + (last ? last.at : 0) + ":" + chatOpen;
+  if (sig === chatSig) return;
+  chatSig = sig;
+  const L = $("chat-list");
+  L.innerHTML = list.length
+    ? list.map(m => `<div class="msg ${m.id === myId ? "me" : ""}"><small>${esc(m.name)}</small>${esc(m.text)}</div>`).join("")
+    : `<div class="muted">게임하면서 친구들과 이야기해 보세요.</div>`;
+  L.scrollTop = L.scrollHeight;
+}
+$("chat-fab").onclick = () => { chatOpen = true; render(); $("chat-in").focus(); };
+$("chat-x").onclick = () => { chatOpen = false; render(); };
+$("chat").onkeydown = e => { if (e.key === "Escape") { chatOpen = false; render(); } };
+$("chat-form").onsubmit = e => {
+  e.preventDefault();
+  const inp = $("chat-in"), text = inp.value.trim();
+  if (!text) return;
+  send("chat", { text, name: myName });
+  inp.value = ""; inp.focus();
+};
 
 // 앉기: 닉네임 입력 패널을 해당 좌석 아래(로비 영역)에 띄움
 function openSit(i) {
