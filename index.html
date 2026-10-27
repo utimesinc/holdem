@@ -153,6 +153,7 @@ h1 { font-family: var(--f-sign); font-weight: 400; font-size: 26px; margin: 0; l
 .chat-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #33271f; }
 .chat-form input[type=text] { flex: 1; width: auto; min-width: 0; font-size: 16px; }   /* 16px: 아이폰에서 입력할 때 화면 확대 방지 */
 .chat-form .btn { padding: 8px 14px; }
+@media (max-width: 619px) { .chat { height: min(36vh, 300px); } }   /* 폰: 처음부터 열려 있으니 테이블을 덜 가리게 낮게 */
 /* 승리 표시: 내가 이기면 테이블 가운데 큰 WIN 도장, 이긴 사람 좌석에는 WIN 배지 */
 .bigwin {
   position: absolute; left: 50%; top: 48%; z-index: 4; pointer-events: none; text-align: center; line-height: 1.05;
@@ -1298,11 +1299,12 @@ function renderRoom() {
 }
 
 // 대화창 — 목록은 새 메시지가 왔을 때만 다시 그림 (입력 중인 글자는 건드리지 않음)
-let chatOpen = false, chatSig = "", chatSeen = 0;
+let chatOpen = true, chatSig = "", chatSeen = 0;      // 방에 들어가면 처음부터 열려 있음
 function renderChat(s) {
   const list = s.chat || [], last = list[list.length - 1];
-  $("chat-fab").hidden = !mode || !S || chatOpen;
-  $("chat").hidden = !chatOpen;
+  const inRoom = !!mode && !!S;
+  $("chat-fab").hidden = !inRoom || chatOpen;
+  $("chat").hidden = !inRoom || !chatOpen;
   if (chatOpen && last) chatSeen = last.at;
   const unread = list.filter(m => m.at > chatSeen && m.id !== myId).length;
   $("chat-badge").hidden = !unread;
@@ -1322,10 +1324,18 @@ $("chat").onkeydown = e => { if (e.key === "Escape") { chatOpen = false; render(
 $("chat-form").onsubmit = e => {
   e.preventDefault();
   const inp = $("chat-in"), text = inp.value.trim();
-  if (!text) return;
+  if (!text) { inp.blur(); return; }                  // 빈 칸에서 엔터 → 입력에서 빠져나옴
   send("chat", { text, name: myName });
   inp.value = ""; inp.focus();
 };
+// 어디서든 엔터 → 대화 입력칸으로 (다른 입력칸·버튼·카드를 쓰는 중이면 그쪽 엔터를 그대로 둠)
+document.addEventListener("keydown", e => {
+  if (e.key !== "Enter" || e.isComposing || !mode || !S) return;
+  if (e.target.closest("input, textarea, select, button, [role=button]")) return;
+  e.preventDefault();
+  if (!chatOpen) { chatOpen = true; render(); }
+  $("chat-in").focus();
+});
 
 // 앉기: 닉네임 입력 패널을 해당 좌석 아래(로비 영역)에 띄움
 function openSit(i) {
